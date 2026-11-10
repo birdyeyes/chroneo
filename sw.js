@@ -1,6 +1,6 @@
 // Chronéo – service worker : met l'application en cache pour qu'elle s'ouvre hors connexion.
 // Changer VERSION à chaque mise à jour des fichiers pour forcer le rafraîchissement du cache.
-const VERSION = "chroneo-web-2";
+const VERSION = "chroneo-web-3";
 const FICHIERS = ["./", "./index.html", "./manifest.webmanifest", "./icone-192.png", "./icone-512.png", "./icone-180.png", "./icone-maskable-512.png"];
 
 self.addEventListener("install", e => {

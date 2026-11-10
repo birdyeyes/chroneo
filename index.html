@@ -244,6 +244,7 @@ label.champ textarea { min-height: 84px; resize: vertical; }
 </head>
 <body>
 <header class="barre" id="barre"></header>
+<div id="bandeau"></div>
 <main id="vue"></main>
 <nav class="onglets" id="onglets" aria-label="Sections">
   <a href="#temps"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9.5 2.5h5"/></svg><span>Temps</span></a>
@@ -683,7 +684,7 @@ function charger() {
 }
 let D = charger();
 let C = lire(CLE_CHRONO, { debut: 0, pauseDebut: 0, pauseCumul: 0, missionId: null, intervenantId: null, dernierCarillon: 0 });
-function sauver() { ecrire(CLE, D); }
+function sauver() { ecrire(CLE, D); if (typeof OneDriveSync !== "undefined") OneDriveSync.planifier(); }
 function sauverChrono() { ecrire(CLE_CHRONO, C); }
 
 // ------------------------------------------------------------ Fichiers (IndexedDB)
@@ -1858,6 +1859,7 @@ function rendreReglages() {
     <label class="champ"><span>Autres mentions légales (forme juridique, capital, RCS…)</span><textarea name="mentionsLegales">${echap(e.mentionsLegales)}</textarea></label>
     <button type="button" class="btn large" id="enreg-entreprise" style="margin-top:10px">Enregistrer les informations de l’entreprise</button>
 
+    ${OneDriveSync.sectionReglages()}
     <div class="section">Données</div>
     <p class="note">${D.clients.length} client(s), ${D.missions.length} mission(s), ${D.saisies.length} temps, ${D.factures.length} facture(s), ${D.achats.length} achat(s), sur cet appareil.</p>
     <button type="button" class="btn large" id="sauvegarder">Créer une sauvegarde complète</button>
@@ -1936,6 +1938,7 @@ function rendreReglages() {
     sauver(); toast("Informations enregistrées");
   };
 
+  OneDriveSync.brancherReglages();
   // Données
   $("#sauvegarder").onclick = async ev => {
     const b = ev.currentTarget; b.disabled = true; b.innerHTML = `<span class="chargement"></span> Préparation…`;
@@ -2068,10 +2071,188 @@ function importerTemps(j) {
   sauver(); return n;
 }
 
+/* ===== app-onedrive.js ===== */
+/* =====================================================================
+   Chronéo web – synchronisation OneDrive (API Microsoft Graph)
+   Même fichier et même format que l'appli Android : OneDrive/<dossier>/chroneo-donnees.json
+   (sauvegarde complète « GestionTemps-sauvegarde »). Connexion OAuth 2.0 + PKCE dans le navigateur.
+   ===================================================================== */
+const OneDriveSync = (() => {
+  const CLE_OD = "chroneo.onedrive.v1";
+  const AUTORITE = "https://login.microsoftonline.com/common/oauth2/v2.0";
+  const GRAPH = "https://graph.microsoft.com/v1.0";
+  const PORTEES = "offline_access Files.ReadWrite User.Read";
+  const NOM_FICHIER = "chroneo-donnees.json";
+  const P = Object.assign({ clientId: "", dossier: "Chronéo", acces: "", expire: 0, refresh: "", compte: "", actif: false, derniereDate: "", derniereEcriture: "", erreur: "" }, lire(CLE_OD, {}));
+  const sauverP = () => ecrire(CLE_OD, P);
+  let minuteur = 0, enAttente = false, ignorerJusqua = 0, enCours = false;
+
+  const b64url = octets => btoa(String.fromCharCode(...octets)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const redirection = () => location.origin + location.pathname;
+  const chemin = () => (P.dossier || "Chronéo").trim().replace(/^\/+|\/+$/g, "") + "/" + NOM_FICHIER;
+  const urlFichier = () => GRAPH + "/me/drive/root:/" + chemin().split("/").map(encodeURIComponent).join("/") + ":/content";
+
+  // ---------------------------------------------------------------- Connexion
+  async function connecter() {
+    if (!P.clientId) throw new Error("Saisissez d’abord l’ID d’application Azure");
+    const verificateur = b64url(crypto.getRandomValues(new Uint8Array(48)));
+    const defi = b64url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verificateur))));
+    const etat = b64url(crypto.getRandomValues(new Uint8Array(16)));
+    sessionStorage.setItem("chroneo.od.pkce", JSON.stringify({ verificateur, etat, hash: location.hash }));
+    location.href = `${AUTORITE}/authorize?client_id=${encodeURIComponent(P.clientId)}&response_type=code&redirect_uri=${encodeURIComponent(redirection())}` +
+      `&response_mode=query&scope=${encodeURIComponent(PORTEES)}&code_challenge=${defi}&code_challenge_method=S256&state=${etat}&prompt=select_account`;
+  }
+  async function jetons(champs) {
+    const rep = await fetch(AUTORITE + "/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(champs) });
+    const j = await rep.json().catch(() => ({}));
+    if (!rep.ok) throw new Error((j.error_description || "HTTP " + rep.status).split("\r")[0]);
+    P.acces = j.access_token; P.expire = Date.now() + (j.expires_in || 3600) * 1000; if (j.refresh_token) P.refresh = j.refresh_token; sauverP();
+  }
+  /** Au démarrage : traite le retour de la page de connexion Microsoft (?code=…). */
+  async function traiterRetour() {
+    const q = new URLSearchParams(location.search);
+    if (!q.has("code") && !q.has("error")) return false;
+    const pk = JSON.parse(sessionStorage.getItem("chroneo.od.pkce") || "{}");
+    history.replaceState(history.state, "", location.pathname + (pk.hash || "#reglages"));
+    sessionStorage.removeItem("chroneo.od.pkce");
+    try {
+      if (q.has("error")) throw new Error(q.get("error_description") || q.get("error"));
+      if (q.get("state") !== pk.etat) throw new Error("réponse de connexion inattendue");
+      await jetons({ client_id: P.clientId, grant_type: "authorization_code", code: q.get("code"), redirect_uri: redirection(), code_verifier: pk.verificateur, scope: PORTEES });
+      const moi = await (await fetch(GRAPH + "/me", { headers: { Authorization: "Bearer " + P.acces } })).json();
+      P.compte = moi.mail || moi.userPrincipalName || ""; P.erreur = ""; sauverP();
+      toast("Connecté à OneDrive : " + P.compte);
+    } catch (e) { P.erreur = "Connexion OneDrive impossible : " + e.message; sauverP(); toast(P.erreur); }
+    return true;
+  }
+  async function jeton() {
+    if (P.acces && P.expire > Date.now() + 60000) return P.acces;
+    if (!P.refresh) throw Object.assign(new Error("Reconnexion à OneDrive nécessaire"), { reconnexion: true });
+    try { await jetons({ client_id: P.clientId, grant_type: "refresh_token", refresh_token: P.refresh, scope: PORTEES }); return P.acces; }
+    catch (e) { P.refresh = ""; P.acces = ""; sauverP(); throw Object.assign(new Error("Reconnexion à OneDrive nécessaire"), { reconnexion: true }); }
+  }
+  function deconnecter() { Object.assign(P, { acces: "", refresh: "", expire: 0, compte: "", actif: false, erreur: "" }); sauverP(); }
+
+  // ---------------------------------------------------------------- Fichier
+  async function envoyer(texte) {
+    const rep = await fetch(urlFichier(), { method: "PUT", headers: { Authorization: "Bearer " + await jeton(), "Content-Type": "application/json" }, body: texte });
+    if (!rep.ok) throw new Error(rep.status === 507 ? "espace OneDrive insuffisant" : "OneDrive : erreur " + rep.status);
+  }
+  async function telecharger() {
+    const rep = await fetch(urlFichier(), { headers: { Authorization: "Bearer " + await jeton() } });
+    if (rep.status === 404) return null;
+    if (!rep.ok) throw new Error("OneDrive : erreur " + rep.status);
+    const t = await rep.text(); return t.trim() ? t : null;
+  }
+
+  // ---------------------------------------------------------------- Synchronisation
+  async function ecrireMaintenant() {
+    if (!P.actif || enCours) return;
+    enCours = true; clearTimeout(minuteur);
+    try {
+      const j = await sauvegardeAndroid(); await envoyer(JSON.stringify(j));
+      P.derniereDate = j.dateExport; P.derniereEcriture = new Date().toISOString(); P.erreur = ""; enAttente = false;
+    } catch (e) { P.erreur = e.reconnexion ? "Reconnexion à OneDrive nécessaire (Réglages)" : "Échec de l’envoi vers OneDrive : " + e.message; }
+    sauverP(); enCours = false; majBandeau();
+  }
+  /** Appelé à chaque enregistrement : envoi quelques secondes après la dernière modification. */
+  function planifier() {
+    if (!P.actif || Date.now() < ignorerJusqua) return;
+    enAttente = true; clearTimeout(minuteur); minuteur = setTimeout(ecrireMaintenant, 8000);
+  }
+  /** Renvoie le contenu distant s'il diffère de la dernière version écrite ou chargée par cet appareil. */
+  async function modifieAilleurs() {
+    if (!P.actif) return null;
+    try { const t = await telecharger(); if (!t) return null; const d = JSON.parse(t).dateExport; return d && d !== P.derniereDate ? t : null; }
+    catch (e) { P.erreur = e.reconnexion ? "Reconnexion à OneDrive nécessaire (Réglages)" : e.message; sauverP(); return null; }
+  }
+  async function charger(texte) {
+    const j = JSON.parse(texte);
+    if (j.format !== "GestionTemps-sauvegarde") throw new Error("ce fichier n’est pas un fichier de données Chronéo");
+    ignorerJusqua = Date.now() + 4000;
+    await restaurerAndroid(j);
+    P.derniereDate = j.dateExport; P.erreur = ""; enAttente = false; clearTimeout(minuteur); sauverP();
+  }
+  async function activer() {
+    P.actif = true; P.derniereDate = ""; sauverP();
+    const t = await telecharger();            // fichier déjà présent (créé par Android ou un autre appareil) ?
+    if (t) return t;
+    await ecrireMaintenant(); return null;
+  }
+
+  // ---------------------------------------------------------------- Bandeau (version différente, reconnexion)
+  let distant = null;
+  function majBandeau() {
+    const z = $("#bandeau"); if (!z) return;
+    if (distant) {
+      let resume = ""; try { const j = JSON.parse(distant); resume = `version du ${String(j.dateExport || "").slice(0, 16).replace("T", " ")} : ${(j.saisies || []).length} temps, ${(j.factures || []).length} facture(s)`; } catch (e) { /* */ }
+      z.innerHTML = `<div class="carte accent" style="margin:12px 16px 0"><div class="fort">Données modifiées sur un autre appareil</div><div class="petit">${echap(resume)}</div>
+        <div class="boutons-ligne"><button class="btn" id="od-charger">Charger le fichier OneDrive</button><button class="btn contour" id="od-garder">Garder cet appareil</button></div></div>`;
+      $("#od-charger").onclick = async () => { try { await charger(distant); distant = null; toast("Données chargées depuis OneDrive"); majBandeau(); rendre(); } catch (e) { toast("Échec : " + e.message); } };
+      $("#od-garder").onclick = async () => { distant = null; majBandeau(); await ecrireMaintenant(); toast("OneDrive mis à jour avec cet appareil"); };
+    } else if (P.actif && P.erreur.startsWith("Reconnexion")) {
+      z.innerHTML = `<div class="carte alerte" style="margin:12px 16px 0;display:flex;gap:10px;align-items:center"><span style="flex:1" class="petit">OneDrive : reconnexion nécessaire pour continuer la synchronisation.</span><button class="btn" id="od-reco">Reconnecter</button></div>`;
+      $("#od-reco").onclick = () => connecter().catch(e => toast(e.message));
+    } else z.innerHTML = "";
+  }
+  async function demarrer() {
+    await traiterRetour();
+    if (P.actif) { distant = await modifieAilleurs(); majBandeau(); }
+    document.addEventListener("visibilitychange", async () => {
+      if (document.hidden) { if (enAttente) ecrireMaintenant(); }
+      else if (P.actif && !enAttente) { const t = await modifieAilleurs(); if (t) { distant = t; majBandeau(); } }
+    });
+  }
+
+  // ---------------------------------------------------------------- Section des réglages
+  function sectionReglages() {
+    const ok = !!P.refresh || (P.acces && P.expire > Date.now());
+    return `<div class="section">OneDrive (fichier de données partagé avec l’appli Android)</div>
+      <label class="champ"><span>ID d’application Azure (client)</span><input id="od-client" value="${echap(P.clientId)}" autocomplete="off"></label>
+      <label class="champ"><span>Dossier dans OneDrive</span><input id="od-dossier" value="${echap(P.dossier)}"></label>
+      <p class="note">Fichier : ${echap(chemin())}. Dans Azure, déclarez la plateforme <b>« Application monopage (SPA) »</b> avec l’URI de redirection : <b>${echap(redirection())}</b></p>
+      ${P.erreur ? `<p class="note ko">${echap(P.erreur)}</p>` : ""}
+      ${ok ? `<p class="note ok">Connecté : ${echap(P.compte)}${P.actif ? ", synchronisation active" + (P.derniereEcriture ? ", dernier envoi le " + echap(P.derniereEcriture.slice(0, 16).replace("T", " ")) : "") : ""}</p>` : ""}
+      <div class="boutons-ligne">
+        ${!ok ? `<button type="button" class="btn" id="od-connecter">Se connecter à Microsoft</button>` : ""}
+        ${ok && !P.actif ? `<button type="button" class="btn" id="od-activer">Utiliser OneDrive pour mes données</button>` : ""}
+        ${ok && P.actif ? `<button type="button" class="btn contour" id="od-envoyer">Envoyer maintenant</button><button type="button" class="btn contour" id="od-recharger">Charger depuis OneDrive</button>` : ""}
+      </div>
+      ${ok ? `<button type="button" class="btn texte erreur-t" id="od-deconnecter">Se déconnecter de Microsoft</button>` : ""}
+      <div id="od-proposition"></div>`;
+  }
+  function brancherReglages() {
+    const ci = $("#od-client"); if (!ci) return;
+    ci.onchange = () => { P.clientId = ci.value.trim(); sauverP(); };
+    $("#od-dossier").onchange = e => { P.dossier = e.target.value.trim() || "Chronéo"; sauverP(); rendre(); };
+    const b = id => $(id);
+    if (b("#od-connecter")) b("#od-connecter").onclick = () => { P.clientId = ci.value.trim(); sauverP(); connecter().catch(e => toast(e.message)); };
+    if (b("#od-activer")) b("#od-activer").onclick = async () => {
+      try {
+        const t = await activer();
+        if (t) proposer(t); else { toast("Données envoyées vers OneDrive"); rendre(); }
+      } catch (e) { toast("OneDrive : " + e.message); rendre(); }
+    };
+    if (b("#od-envoyer")) b("#od-envoyer").onclick = async () => { await ecrireMaintenant(); toast(P.erreur || "OneDrive à jour"); rendre(); };
+    if (b("#od-recharger")) b("#od-recharger").onclick = async () => { try { const t = await telecharger(); if (t) proposer(t); else toast("Aucun fichier dans OneDrive"); } catch (e) { toast(e.message); } };
+    if (b("#od-deconnecter")) b("#od-deconnecter").onclick = () => { deconnecter(); rendre(); };
+  }
+  function proposer(texte) {
+    let resume = ""; try { const j = JSON.parse(texte); resume = `Version du ${String(j.dateExport || "").slice(0, 16).replace("T", " ")} : ${(j.clients || []).length} client(s), ${(j.saisies || []).length} temps, ${(j.factures || []).length} facture(s)`; } catch (e) { /* */ }
+    $("#od-proposition").innerHTML = `<div class="carte accent"><div class="fort">Le fichier OneDrive contient déjà des données</div><div class="petit">${echap(resume)}</div>
+      <div class="boutons-ligne"><button type="button" class="btn" id="od-p-charger">Charger ces données (remplace cet appareil)</button><button type="button" class="btn contour" id="od-p-ecraser">Écraser avec cet appareil</button></div></div>`;
+    $("#od-p-charger").onclick = async () => { try { await charger(texte); toast("Données chargées depuis OneDrive"); rendre(); } catch (e) { toast("Échec : " + e.message); } };
+    $("#od-p-ecraser").onclick = async () => { await ecrireMaintenant(); toast("OneDrive mis à jour avec cet appareil"); rendre(); };
+  }
+
+  return { planifier, demarrer, sectionReglages, brancherReglages, ecrireMaintenant };
+})();
+
 /* ===== démarrage ===== */
 appliquerTheme();
 history.replaceState({ ecran: 0 }, "");
 rendre();
+OneDriveSync.demarrer().then(() => rendre());
 if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
 </script>
 </body>

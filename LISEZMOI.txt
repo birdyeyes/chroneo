@@ -20,3 +20,9 @@ Sauvegardes : Réglages > Données > Créer une sauvegarde complète.
 
 Première utilisation de la lecture des justificatifs (OCR) : le module de lecture
 (environ 10 Mo) se télécharge une fois, il faut donc être connecté.
+
+OneDrive (même fichier que l'appli Android)
+  Réglages > OneDrive : saisir l'ID d'application Azure, Se connecter, puis
+  « Utiliser OneDrive pour mes données ». Dans Azure, ajouter la plateforme
+  « Application monopage (SPA) » avec l'URI de redirection affichée dans les Réglages
+  (ex. https://votre-nom.github.io/chroneo/).
