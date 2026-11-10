@@ -1,6 +1,6 @@
 // Chronéo – service worker : met l'application en cache pour qu'elle s'ouvre hors connexion.
 // Changer VERSION à chaque mise à jour des fichiers pour forcer le rafraîchissement du cache.
-const VERSION = "chroneo-web-1";
+const VERSION = "chroneo-web-2";
 const FICHIERS = ["./", "./index.html", "./manifest.webmanifest", "./icone-192.png", "./icone-512.png", "./icone-180.png", "./icone-maskable-512.png"];
 
 self.addEventListener("install", e => {
@@ -9,7 +9,7 @@ self.addEventListener("install", e => {
 self.addEventListener("activate", e => {
   e.waitUntil(caches.keys().then(cles => Promise.all(cles.filter(k => k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
-// Réseau d'abord pour la page (mises à jour), cache en secours ; cache d'abord pour le reste (icônes, polices).
+// Réseau d'abord pour la page (mises à jour), cache en secours ; cache d'abord pour le reste (icônes, polices, bibliothèques).
 self.addEventListener("fetch", e => {
   if (e.request.method !== "GET") return;
   if (e.request.mode === "navigate") {
@@ -18,7 +18,9 @@ self.addEventListener("fetch", e => {
     return;
   }
   e.respondWith(caches.match(e.request).then(r => r || fetch(e.request).then(rep => {
-    if (rep.ok && (e.request.url.startsWith(self.location.origin) || e.request.url.includes("fonts.g"))) {
+    const u = e.request.url;
+    const aGarder = u.startsWith(self.location.origin) || u.includes("fonts.g") || u.includes("cdnjs.cloudflare.com") || u.includes("cdn.jsdelivr.net");
+    if ((rep.ok || rep.type === "opaque") && aGarder) {   // bibliothèques (PDF, lecture des justificatifs) gardées pour le hors connexion
       const copie = rep.clone(); caches.open(VERSION).then(c => c.put(e.request, copie));
     }
     return rep;

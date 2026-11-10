@@ -1,27 +1,22 @@
-Chronéo – version web (PWA) – saisie des temps et chrono
-=========================================================
+Chronéo – version web complète (PWA)
+BIRDYEYES Solutions – gestion des temps et de la facturation
+=============================================================
 
-Contenu
-  index.html               l'application (un seul fichier)
-  manifest.webmanifest     nom, icônes et couleurs pour l'installation sur l'écran d'accueil
-  sw.js                    fonctionnement hors connexion
-  icone-*.png              icônes (Android, iPhone)
+Contenu : index.html (l'application), manifest.webmanifest, sw.js (hors connexion), icônes,
+licence des polices intégrées aux factures PDF.
 
-Mise en ligne (gratuite)
-  Déposez CES FICHIERS tels quels dans un hébergement HTTPS, par exemple :
-  - Netlify Drop (app.netlify.com/drop) : glisser-déposer le dossier, une adresse est créée ;
-  - GitHub Pages ;
-  - votre hébergement web (OVH, o2switch…), dans un sous-dossier /chroneo/.
-  Le HTTPS est obligatoire pour l'installation et le mode hors connexion.
+Mise en ligne sur GitHub Pages
+  1. Dans votre dépôt « chroneo » : Add file > Upload files, glissez TOUS ces fichiers
+     (ils remplacent ceux de la version d'essai), puis Commit changes.
+  2. La mise à jour est en ligne en 1 à 2 minutes ; l'appli installée la récupère à la
+     prochaine ouverture avec du réseau. Vos données sont conservées.
 
-Installation sur le téléphone
-  - Android (Chrome) : ouvrir l'adresse, menu ⋮ > « Installer l'application ».
-  - iPhone (Safari)  : ouvrir l'adresse, bouton Partager > « Sur l'écran d'accueil ».
+Installation : Android (Chrome) menu ⋮ > Installer l'application ;
+               iPhone (Safari) Partager > Sur l'écran d'accueil.
 
-Données
-  Elles sont enregistrées sur le téléphone, dans l'application. Pensez à
-  « Sauvegarder toutes les données » de temps en temps (Réglages).
-  Échanges avec l'appli Android :
-  - Import : sauvegarde ou fichier de données Android, extraction de temps.
-  - Export : « Exporter les temps pour l'appli Android », puis dans l'appli
-    Android : Réglages > Données / JSON > Importer des temps.
+Sauvegardes : Réglages > Données > Créer une sauvegarde complète.
+  Le format est celui de l'appli Android : une sauvegarde se restaure indifféremment
+  sur Android ou dans la version web (factures PDF, justificatifs et logo compris).
+
+Première utilisation de la lecture des justificatifs (OCR) : le module de lecture
+(environ 10 Mo) se télécharge une fois, il faut donc être connecté.
