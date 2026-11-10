@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Chronéo</title>
+<meta name="theme-color" content="#292929">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Chronéo">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icone-180.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%23292929'/%3E%3Ccircle cx='12' cy='12' r='4' fill='none' stroke='%23FF8000' stroke-width='2'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --graphite: #292929;
+  --orange: #FF8000;
+  --accent: #B85400;          /* orange lisible sur fond clair */
+  --fond: #F6F6F4;
+  --surface: #FFFFFF;
+  --surface-2: #EFEDEA;
+  --texte: #292929;
+  --texte-2: #5C5A57;
+  --trait: #DEDBD6;
+  --barre: #292929;
+  --sur-barre: #FFFFFF;
+  --erreur: #BA1A1A;
+  --pause: rgba(255, 128, 0, .22);
+  color-scheme: light;
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --accent: #FF9A3D; --fond: #141414; --surface: #1F1F1F; --surface-2: #2A2A2A;
+    --texte: #EDEDED; --texte-2: #BDBBB8; --trait: #353535; --barre: #1C1C1C; --sur-barre: #EDEDED;
+    --erreur: #FFB4AB; --pause: rgba(255, 128, 0, .28); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --accent: #FF9A3D; --fond: #141414; --surface: #1F1F1F; --surface-2: #2A2A2A;
+  --texte: #EDEDED; --texte-2: #BDBBB8; --trait: #353535; --barre: #1C1C1C; --sur-barre: #EDEDED;
+  --erreur: #FFB4AB; --pause: rgba(255, 128, 0, .28); color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: inherit; }
+html { height: 100%; scroll-padding-top: env(safe-area-inset-top, 0px); }
+body {
+  margin: 0; min-height: 100%; background: var(--fond); color: var(--texte);
+  font: 16px/1.4 "Barlow", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--barre); }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+
+/* ---------- Barre de titre ---------- */
+.barre {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+  display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+  background: var(--barre); color: var(--sur-barre);
+}
+.barre h1 { margin: 0; font-size: 20px; font-weight: 600; flex: 1; }
+.barre .retour { background: none; border: 0; color: var(--sur-barre); font-size: 26px; line-height: 1; padding: 0 6px 0 0; }
+.barre .action { background: none; border: 0; color: var(--orange); font-weight: 600; font-size: 16px; padding: 6px 4px; }
+.barre .action:disabled { opacity: .4; }
+.logo { width: 30px; height: 30px; flex: none; }
+
+main { max-width: 620px; margin: 0 auto; padding: 0 16px 120px; }
+
+/* ---------- Navigation ---------- */
+.onglets {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
+  display: flex; justify-content: center; gap: 4px;
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+  background: var(--surface); border-top: 1px solid var(--trait);
+}
+.onglets a {
+  flex: 1; max-width: 160px; text-align: center; text-decoration: none; color: var(--texte-2);
+  padding: 8px 4px; border-radius: 12px; font-weight: 500;
+}
+.onglets a[aria-current="page"] { color: var(--texte); background: var(--pause); font-weight: 600; }
+
+/* ---------- Chrono : l'anneau orange du logo devient le cadran ---------- */
+.chrono {
+  margin-top: 16px; padding: 18px 18px 16px; border-radius: 22px;
+  background: var(--graphite); color: #F2F2F2;
+}
+.chrono.actif { background: var(--orange); color: var(--graphite); }
+.chrono.pause { background: var(--graphite); }
+.cadran { display: grid; place-items: center; position: relative; width: 210px; height: 210px; margin: 4px auto 10px; }
+.cadran svg { position: absolute; inset: 0; transform: rotate(-90deg); }
+.cadran .fond-anneau { stroke: rgba(255,255,255,.14); }
+.chrono.actif .cadran .fond-anneau { stroke: rgba(41,41,41,.18); }
+.cadran .anneau { stroke: var(--orange); transition: stroke-dashoffset .8s linear; }
+.chrono.actif .cadran .anneau { stroke: var(--graphite); }
+.temps-ecoule { font-size: 44px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: .5px; }
+.sous-cadran { font-size: 14px; opacity: .8; text-align: center; margin-top: -2px; }
+.chrono select {
+  width: 100%; margin: 4px 0; padding: 10px 12px; border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.25); background: transparent; color: inherit;
+}
+.chrono select option { color: #292929; }
+.chrono .boutons { display: flex; gap: 10px; margin-top: 10px; }
+.chrono .boutons button { flex: 1; }
+
+/* ---------- Boutons ---------- */
+.btn { border: 0; border-radius: 14px; padding: 12px 16px; font-weight: 600; background: var(--orange); color: var(--graphite); }
+.btn:disabled { opacity: .45; }
+.btn.sombre { background: var(--graphite); color: #fff; }
+.btn.contour { background: transparent; color: inherit; border: 1.5px solid currentColor; }
+.btn.texte { background: none; color: var(--accent); padding: 10px 4px; }
+.btn.danger { background: none; color: var(--erreur); border: 1.5px solid var(--erreur); }
+.btn.large { width: 100%; }
+
+/* ---------- Filtres ---------- */
+.puces { display: flex; gap: 6px; overflow-x: auto; padding: 12px 0 4px; scrollbar-width: none; }
+.puce {
+  flex: none; padding: 7px 13px; border-radius: 999px; border: 1px solid var(--trait);
+  background: var(--surface); color: var(--texte); font-size: 14px; font-weight: 500;
+}
+.puce[aria-pressed="true"] { background: var(--graphite); border-color: var(--graphite); color: #fff; }
+:root[data-theme="dark"] .puce[aria-pressed="true"] { background: var(--orange); color: var(--graphite); border-color: var(--orange); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .puce[aria-pressed="true"] { background: var(--orange); color: var(--graphite); border-color: var(--orange); } }
+.periode { display: flex; align-items: center; gap: 4px; }
+.periode button { background: none; border: 0; font-size: 26px; padding: 2px 12px; color: var(--texte); }
+.periode .titre { flex: 1; text-align: center; font-weight: 600; }
+.periode .aujourdhui { display: block; font-size: 13px; color: var(--accent); background: none; border: 0; margin: 0 auto; }
+
+.resume { display: flex; justify-content: space-between; gap: 12px; margin: 10px 0 4px; }
+.resume .grand { font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.resume .petit { font-size: 13px; color: var(--texte-2); }
+.resume .droite { text-align: right; }
+.resume .droite .grand { color: var(--accent); }
+
+/* ---------- Liste des temps ---------- */
+.groupe { display: flex; justify-content: space-between; gap: 8px; margin: 18px 0 6px; font-weight: 600; font-size: 15px; }
+.groupe span:last-child { font-variant-numeric: tabular-nums; }
+.glisse { position: relative; margin: 6px 0; touch-action: pan-y; }
+.glisse .fond-action {
+  position: absolute; inset: 0; border-radius: 16px; display: flex; align-items: center; padding: 0 20px;
+  font-weight: 600; color: var(--graphite); background: var(--orange); opacity: 0;
+}
+.glisse .fond-action.gauche { justify-content: flex-end; }
+.glisse .fond-action.danger { background: var(--erreur); color: #fff; }
+.ligne {
+  position: relative; display: flex; gap: 12px; align-items: center; width: 100%; text-align: left;
+  padding: 12px 14px; border-radius: 16px; border: 1px solid var(--trait); background: var(--surface);
+  transition: transform .25s ease;
+}
+.glisse.en-cours .ligne { transition: none; }
+.ligne .corps { flex: 1; min-width: 0; }
+.ligne .titre { font-weight: 600; }
+.ligne .mission { color: var(--accent); font-size: 15px; }
+.ligne .infos { font-size: 13px; color: var(--texte-2); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.ligne .desc { font-size: 13px; color: var(--texte-2); white-space: pre-line; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.ligne .statut { font-size: 12px; color: var(--accent); font-weight: 600; }
+.ligne .chiffres { text-align: right; font-variant-numeric: tabular-nums; }
+.ligne .chiffres b { display: block; }
+.ligne .chiffres small { color: var(--texte-2); }
+.etiquette-pause { background: var(--pause); color: var(--texte); border-radius: 6px; padding: 1px 6px; font-weight: 600; font-size: 12px; }
+.vide { margin: 32px 0; text-align: center; color: var(--texte-2); }
+.fab {
+  position: fixed; right: max(16px, calc(50% - 294px)); bottom: calc(78px + env(safe-area-inset-bottom, 0px)); z-index: 4;
+  width: 58px; height: 58px; border-radius: 18px; border: 0; font-size: 30px; line-height: 1;
+  background: var(--orange); color: var(--graphite); box-shadow: 0 6px 16px rgba(0,0,0,.25);
+}
+
+/* ---------- Formulaires (plein écran) ---------- */
+.section { display: flex; align-items: center; gap: 8px; margin: 22px 0 8px; font-weight: 600; }
+.section::before { content: ""; width: 4px; height: 16px; border-radius: 2px; background: var(--orange); }
+label.champ { display: block; margin: 8px 0; }
+label.champ > span { display: block; font-size: 13px; color: var(--texte-2); margin-bottom: 4px; }
+label.champ input, label.champ select, label.champ textarea {
+  width: 100%; padding: 12px; border-radius: 12px; border: 1px solid var(--trait); background: var(--surface);
+}
+label.champ textarea { min-height: 84px; resize: vertical; }
+.deux { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.trois { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.note { font-size: 13px; color: var(--texte-2); margin: 6px 0; }
+.note.ok { color: var(--accent); font-weight: 600; }
+.note.ko { color: var(--erreur); }
+.carte { background: var(--surface); border: 1px solid var(--trait); border-radius: 16px; padding: 14px; margin: 8px 0; }
+.carte .entete { display: flex; justify-content: space-between; gap: 8px; font-weight: 600; }
+.barre-progres { height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; margin: 8px 0 4px; }
+.barre-progres i { display: block; height: 100%; background: var(--orange); }
+.barre-progres.depasse i { background: var(--erreur); }
+.interrupteur { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 10px 0; }
+.interrupteur input { width: 22px; height: 22px; accent-color: var(--orange); }
+
+/* ---------- Message en bas ---------- */
+.toast {
+  position: fixed; left: 50%; transform: translate(-50%, 20px); bottom: calc(150px + env(safe-area-inset-bottom, 0px));
+  z-index: 20; display: flex; gap: 14px; align-items: center; max-width: calc(100% - 32px);
+  padding: 12px 16px; border-radius: 14px; background: #292929; color: #fff;
+  opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s;
+}
+.toast.visible { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.toast button { background: none; border: 0; color: var(--orange); font-weight: 700; }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<header class="barre" id="barre"></header>
+<main id="vue"></main>
+<nav class="onglets" id="onglets" aria-label="Sections">
+  <a href="#temps">Temps</a>
+  <a href="#missions">Missions</a>
+  <a href="#reglages">Réglages</a>
+</nav>
+<div class="toast" id="toast" role="status"><span></span><button type="button"></button></div>
+
+<script>
+"use strict";
+/* =====================================================================
+   Chronéo (version web / PWA) – saisie des temps et chrono
+   Données stockées sur l'appareil (localStorage). Formats d'échange
+   compatibles avec l'appli Android (sauvegarde et extraction JSON).
+   ===================================================================== */
+
+// ------------------------------------------------------------ Stockage
+const CLE = "chroneo.donnees.v1", CLE_CHRONO = "chroneo.chrono.v1";
+function lire(cle, defaut) { try { const v = localStorage.getItem(cle); return v ? JSON.parse(v) : defaut; } catch (e) { return defaut; } }
+function ecrire(cle, v) { try { localStorage.setItem(cle, JSON.stringify(v)); return true; } catch (e) { toast("Enregistrement impossible sur cet appareil"); return false; } }
+
+const VIDE = { clients: [], missions: [], intervenants: [], saisies: [], reglages: { baseMinutes: 480, sons: true, theme: "auto", glisserDroite: "aujourdhui", glisserGauche: "memejour" } };
+let D = Object.assign(structuredClone(VIDE), lire(CLE, {}));
+D.reglages = Object.assign(structuredClone(VIDE.reglages), D.reglages || {});
+let C = lire(CLE_CHRONO, { debut: 0, pauseDebut: 0, pauseCumul: 0, missionId: null, intervenantId: null, dernierCarillon: 0 });
+function sauver() { ecrire(CLE, D); }
+function sauverChrono() { ecrire(CLE_CHRONO, C); }
+
+// ------------------------------------------------------------ Outils
+const $ = (s, p = document) => p.querySelector(s);
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const echap = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const pad = n => String(n).padStart(2, "0");
+function isoJour(d = new Date()) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+function dateDe(iso) { const [a, m, j] = iso.split("-").map(Number); return new Date(a, m - 1, j); }
+const JOURS = ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"];
+const MOIS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+function jourLong(iso) { const d = dateDe(iso); const t = JOURS[d.getDay()] + " " + d.getDate() + " " + MOIS[d.getMonth()] + " " + d.getFullYear(); return t[0].toUpperCase() + t.slice(1); }
+function jourCourt(iso) { const d = dateDe(iso); return pad(d.getDate()) + "/" + pad(d.getMonth() + 1) + "/" + d.getFullYear(); }
+function versMinutes(h) { const m = /^(\d{1,2})[:h.,]?(\d{2})?$/.exec(String(h).trim()); if (!m) return null; const hh = +m[1], mm = +(m[2] || 0); return hh < 24 && mm < 60 ? hh * 60 + mm : null; }
+const texteHeure = m => pad(Math.floor(m / 60)) + ":" + pad(m % 60);
+const duree = m => { m = Math.round(m); const h = Math.floor(m / 60), r = m % 60; return r ? h + " h " + pad(r) : h + " h"; };
+const euros = c => (c < 0 ? "-" : "") + Math.floor(Math.abs(c) / 100).toString().replace(/\B(?=(\d{3})+(?!\d))/g, "\u202F") + "," + pad(Math.abs(c) % 100) + " €";
+const base = () => D.reglages.baseMinutes || 480;
+const jours = m => (m / base()).toFixed(2).replace(".", ",").replace(/,00$/, "") + " j";
+const versCentiemes = s => { const t = String(s).trim().replace(/\s/g, "").replace(",", "."); if (!t) return null; const n = Number(t); return isFinite(n) ? Math.round(n * 100) : null; };
+const depuisCentiemes = c => String(c / 100).replace(".", ",");
+
+const client = id => D.clients.find(c => c.id === id);
+const mission = id => D.missions.find(m => m.id === id);
+const intervenant = id => D.intervenants.find(i => i.id === id);
+const nomMission = m => m ? ((client(m.clientId)?.nom || "?") + " – " + m.nom) : "Sans mission";
+function tjm(s) { const m = mission(s.missionId); return (m && m.tjm) || client(s.clientId)?.tjm || 0; }
+const valeur = s => Math.round(s.minutes * tjm(s) / base());
+
+// ------------------------------------------------------------ Sons (Web Audio, comme l'appli Android)
+let audio = null;
+function note(f, debut, dureeS, vol = .35, decroissance = 7, partiels = [[1, 1], [2, .35], [3, .12]]) {
+  const t0 = audio.currentTime + debut;
+  partiels.forEach(([k, a]) => {
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.frequency.value = f * k; o.type = "sine";
+    g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(vol * a, t0 + .01);
+    g.gain.exponentialRampToValueAtTime(.0001, t0 + Math.min(dureeS, 5 / decroissance + .1));
+    o.connect(g).connect(audio.destination); o.start(t0); o.stop(t0 + dureeS);
+  });
+}
+function son(type) {
+  if (!D.reglages.sons) return;
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    if (audio.state === "suspended") audio.resume();
+    const cloche = [[1, 1], [2.76, .4], [5.4, .18], [.5, .25]];
+    if (type === "depart") { note(659.25, 0, .35, .3, 9); note(987.77, .13, .45, .3, 7); }
+    else if (type === "arret") { note(987.77, 0, .3, .3, 9); note(830.61, .12, .3, .3, 9); note(659.25, .24, .6, .3, 5); }
+    else { note(1046.5, 0, 1.2, .3, 3.5, cloche); note(784, .45, 1.4, .3, 3, cloche); }
+  } catch (e) { /* son indisponible */ }
+}
+
+// ------------------------------------------------------------ Message en bas d'écran (avec annulation)
+let minuteurToast = 0;
+function toast(texte, action, rappel) {
+  const t = $("#toast"); t.querySelector("span").textContent = texte;
+  const b = t.querySelector("button"); b.textContent = action || ""; b.style.display = action ? "" : "none";
+  b.onclick = () => { t.classList.remove("visible"); rappel && rappel(); };
+  t.classList.add("visible"); clearTimeout(minuteurToast);
+  minuteurToast = setTimeout(() => t.classList.remove("visible"), action ? 5000 : 2600);
+}
+
+// ------------------------------------------------------------ Thème
+function appliquerTheme() {
+  const t = D.reglages.theme;
+  if (t === "clair") document.documentElement.setAttribute("data-theme", "light");
+  else if (t === "sombre") document.documentElement.setAttribute("data-theme", "dark");
+  else document.documentElement.removeAttribute("data-theme");
+}
+
+// ------------------------------------------------------------ Barre de titre
+const LOGO = `<svg class="logo" viewBox="0 0 40 40" aria-hidden="true"><g fill="#F0F0F0">
+  <ellipse cx="20" cy="9" rx="2.6" ry="9" transform="rotate(-60 20 20)"/><ellipse cx="20" cy="9" rx="2.6" ry="9" transform="rotate(60 20 20)"/>
+  <ellipse cx="20" cy="9" rx="2.6" ry="9" transform="rotate(180 20 20)"/></g>
+  <circle cx="20" cy="20" r="5.2" fill="#292929" stroke="#FF8000" stroke-width="2.6"/></svg>`;
+function barre(titre, retour, action) {
+  $("#barre").innerHTML = (retour ? `<button class="retour" aria-label="Retour">‹</button>` : LOGO) + `<h1>${echap(titre)}</h1>` +
+    (action ? `<button class="action">${echap(action.libelle)}</button>` : "");
+  if (retour) $("#barre .retour").onclick = retour;
+  if (action) { const b = $("#barre .action"); b.onclick = action.faire; b.disabled = !!action.inactif; }
+}
+
+// ------------------------------------------------------------ Chrono
+function ecouleMs() {
+  if (!C.debut) return 0;
+  const now = Date.now();
+  return now - C.debut - C.pauseCumul - (C.pauseDebut ? now - C.pauseDebut : 0);
+}
+function demarrer() {
+  C.debut = Date.now(); C.pauseDebut = 0; C.pauseCumul = 0; C.dernierCarillon = 0; sauverChrono(); son("depart"); rendre();
+}
+function basculerPause() {
+  const now = Date.now();
+  if (C.pauseDebut) { C.pauseCumul += now - C.pauseDebut; C.pauseDebut = 0; } else C.pauseDebut = now;
+  sauverChrono(); rendre();
+}
+function arreter() {
+  const now = Date.now();
+  if (C.pauseDebut) { C.pauseCumul += now - C.pauseDebut; C.pauseDebut = 0; }
+  const d0 = new Date(C.debut), d1 = new Date(now);
+  const debut = d0.getHours() * 60 + d0.getMinutes();
+  let fin = d1.getHours() * 60 + d1.getMinutes();
+  const pause = Math.round(C.pauseCumul / 60000);
+  if (fin <= debut) fin = Math.min(1439, debut + Math.max(1, Math.round((now - C.debut) / 60000)));
+  const jour = isoJour(d0);
+  C.debut = 0; C.pauseCumul = 0; sauverChrono(); son("arret");
+  ouvrirSaisie(null, { jour, debut, fin, pause, missionId: C.missionId, intervenantId: C.intervenantId });
+}
+// Mise à jour chaque seconde + carillon à chaque heure de temps effectif
+setInterval(() => {
+  if (!C.debut) return;
+  const e = ecouleMs(), heures = Math.floor(e / 3600000);
+  if (!C.pauseDebut && heures > (C.dernierCarillon || 0)) { C.dernierCarillon = heures; sauverChrono(); son("heure"); }
+  const el = $("#ecoule"); if (el) el.textContent = hms(e);
+  const a = $("#anneau"); if (a) a.style.strokeDashoffset = String(CIRC * (1 - (e % 3600000) / 3600000));
+}, 1000);
+const hms = ms => { const s = Math.max(0, Math.floor(ms / 1000)); return Math.floor(s / 3600) + ":" + pad(Math.floor(s / 60) % 60) + ":" + pad(s % 60); };
+const CIRC = 2 * Math.PI * 96;
+
+function carteChrono() {
+  const actives = D.missions.filter(m => !m.terminee);
+  const intervs = D.intervenants.filter(i => i.actif !== false);
+  const actif = !!C.debut, enPause = !!C.pauseDebut;
+  const e = ecouleMs();
+  const offset = actif ? CIRC * (1 - (e % 3600000) / 3600000) : CIRC;
+  const m = mission(C.missionId);
+  let corps;
+  if (actif) {
+    const d0 = new Date(C.debut);
+    corps = `<div class="sous-cadran">${enPause ? "En pause" : "En cours"} depuis ${texteHeure(d0.getHours() * 60 + d0.getMinutes())}<br>${echap(nomMission(m))}${C.intervenantId && intervenant(C.intervenantId) ? "<br>" + echap(intervenant(C.intervenantId).nom) : ""}</div>
+      <div class="boutons"><button class="btn contour" data-a="pause">${enPause ? "Reprendre" : "Pause"}</button><button class="btn sombre" data-a="arret">Arrêter</button></div>`;
+  } else if (!actives.length) {
+    corps = `<div class="sous-cadran">Créez une mission (onglet Missions) pour utiliser le chrono.</div>`;
+  } else {
+    corps = `<select data-c="mission" aria-label="Mission"><option value="">Choisir la mission…</option>${actives.map(x => `<option value="${x.id}" ${x.id === C.missionId ? "selected" : ""}>${echap(nomMission(x))}</option>`).join("")}</select>
+      ${intervs.length ? `<select data-c="intervenant" aria-label="Intervenant"><option value="">Choisir l’intervenant…</option>${intervs.map(i => `<option value="${i.id}" ${i.id === C.intervenantId ? "selected" : ""}>${echap(i.nom)}</option>`).join("")}</select>` : ""}
+      <div class="boutons"><button class="btn" data-a="depart" ${(m && !m.terminee) && (!intervs.length || intervs.some(i => i.id === C.intervenantId)) ? "" : "disabled"}>▶ Démarrer</button></div>`;
+  }
+  return `<section class="chrono ${actif ? (enPause ? "pause" : "actif") : ""}">
+    <div class="cadran"><svg viewBox="0 0 210 210"><circle class="fond-anneau" cx="105" cy="105" r="96" fill="none" stroke-width="10"/>
+      <circle id="anneau" class="anneau" cx="105" cy="105" r="96" fill="none" stroke-width="10" stroke-linecap="round"
+        stroke-dasharray="${CIRC}" style="stroke-dashoffset:${offset}"/></svg>
+      <div><div class="temps-ecoule" id="ecoule">${hms(e)}</div>
+      <div class="sous-cadran">${actif ? (enPause ? "en pause" : C.pauseCumul >= 60000 ? "pauses déduites" : "1 tour = 1 heure") : "chrono"}</div></div></div>
+    ${corps}</section>`;
+}
+
+// ------------------------------------------------------------ Périodes
+const ETAT = { periode: "mois", decalage: 0, parMission: false, nonFacturees: false };
+function plage() {
+  const r = new Date(), d = ETAT.decalage;
+  let a, b;
+  if (ETAT.periode === "annee") { a = new Date(r.getFullYear() + d, 0, 1); b = new Date(r.getFullYear() + d, 11, 31); }
+  else if (ETAT.periode === "trimestre") { const q = Math.floor(r.getMonth() / 3); a = new Date(r.getFullYear(), q * 3 + 3 * d, 1); b = new Date(a.getFullYear(), a.getMonth() + 3, 0); }
+  else if (ETAT.periode === "mois") { a = new Date(r.getFullYear(), r.getMonth() + d, 1); b = new Date(a.getFullYear(), a.getMonth() + 1, 0); }
+  else if (ETAT.periode === "semaine") { const l = (r.getDay() + 6) % 7; a = new Date(r.getFullYear(), r.getMonth(), r.getDate() - l + 7 * d); b = new Date(a.getFullYear(), a.getMonth(), a.getDate() + 6); }
+  else return null;
+  return [isoJour(a), isoJour(b)];
+}
+function semaineIso(dt) { const d = new Date(Date.UTC(dt.getFullYear(), dt.getMonth(), dt.getDate())); const j = d.getUTCDay() || 7; d.setUTCDate(d.getUTCDate() + 4 - j); const a = new Date(Date.UTC(d.getUTCFullYear(), 0, 1)); return Math.ceil(((d - a) / 86400000 + 1) / 7); }
+function titrePeriode(p) {
+  const a = dateDe(p[0]), b = dateDe(p[1]);
+  if (ETAT.periode === "annee") return String(a.getFullYear());
+  if (ETAT.periode === "trimestre") return "T" + (Math.floor(a.getMonth() / 3) + 1) + " " + a.getFullYear();
+  if (ETAT.periode === "mois") { const t = MOIS[a.getMonth()] + " " + a.getFullYear(); return t[0].toUpperCase() + t.slice(1); }
+  return "Semaine " + semaineIso(a) + ", du " + pad(a.getDate()) + "/" + pad(a.getMonth() + 1) + " au " + pad(b.getDate()) + "/" + pad(b.getMonth() + 1);
+}
+
+// ------------------------------------------------------------ Écran Temps
+function statutLibelle(s) { return { facture: "Facturée", ancien: "Facturée (ancien outil)", nonfact: "Non facturable" }[s.statut] || ""; }
+function ligneHTML(s) {
+  const m = mission(s.missionId), i = intervenant(s.intervenantId);
+  const horaire = s.debut != null && s.fin != null ? texteHeure(s.debut) + " – " + texteHeure(s.fin) : "";
+  const tete = ETAT.parMission ? `<div class="titre">${jourLong(s.jour)}</div>`
+    : `<div class="titre">${echap(client(s.clientId)?.nom || "Client supprimé")}</div>${m ? `<div class="mission">${echap(m.nom)}</div>` : ""}`;
+  return `<div class="glisse" data-id="${s.id}"><div class="fond-action"></div>
+    <button class="ligne" type="button">
+      <div class="corps">${tete}
+        <div class="infos">${horaire ? `<span>${horaire}</span>` : ""}${i ? `<span>${echap(i.nom)}</span>` : ""}${s.pause > 0 ? `<span class="etiquette-pause">Pause ${duree(s.pause)}</span>` : ""}</div>
+        ${s.description ? `<div class="desc">${echap(s.description)}</div>` : ""}
+        ${s.statut && s.statut !== "afacturer" ? `<div class="statut">${statutLibelle(s)}</div>` : ""}
+      </div>
+      <div class="chiffres"><b>${duree(s.minutes)}</b><small>${euros(valeur(s))}</small></div>
+    </button></div>`;
+}
+function rendreTemps() {
+  barre("Temps");
+  const p = plage();
+  let liste = D.saisies.slice().sort((a, b) => b.jour.localeCompare(a.jour) || (b.debut || 0) - (a.debut || 0));
+  if (p) liste = liste.filter(s => s.jour >= p[0] && s.jour <= p[1]);
+  const total = liste.reduce((t, s) => t + s.minutes, 0);
+  const aFacturer = liste.filter(s => (s.statut || "afacturer") === "afacturer").reduce((t, s) => t + valeur(s), 0);
+  const visibles = ETAT.nonFacturees ? liste.filter(s => (s.statut || "afacturer") === "afacturer") : liste;
+
+  let groupes;
+  if (ETAT.parMission) {
+    const g = new Map();
+    visibles.forEach(s => { const k = s.missionId || "-"; if (!g.has(k)) g.set(k, []); g.get(k).push(s); });
+    groupes = [...g.entries()].sort((a, b) => b[1][0].jour.localeCompare(a[1][0].jour))
+      .map(([k, l]) => [nomMission(mission(k)), l, true]);
+  } else {
+    const g = new Map();
+    visibles.forEach(s => { if (!g.has(s.jour)) g.set(s.jour, []); g.get(s.jour).push(s); });
+    groupes = [...g.entries()].map(([j, l]) => [jourLong(j), l, false]);
+  }
+  const PERIODES = [["tout", "Tout"], ["annee", "Année"], ["trimestre", "Trimestre"], ["mois", "Mois"], ["semaine", "Semaine"]];
+  $("#vue").innerHTML = carteChrono() + `
+    <div class="puces" role="group" aria-label="Période">${PERIODES.map(([c, l]) => `<button class="puce" data-periode="${c}" aria-pressed="${ETAT.periode === c}">${l}</button>`).join("")}</div>
+    ${p ? `<div class="periode"><button data-dec="-1" aria-label="Période précédente">‹</button><div class="titre">${titrePeriode(p)}${ETAT.decalage ? `<button class="aujourdhui" data-dec="0">Revenir à aujourd’hui</button>` : ""}</div><button data-dec="1" aria-label="Période suivante">›</button></div>` : ""}
+    <div class="resume"><div><div class="petit">${p ? "Sur la période" : "Total"}</div><div class="grand">${duree(total)}</div><div class="petit">${jours(total)}, ${liste.length} saisie${liste.length > 1 ? "s" : ""}</div></div>
+      <div class="droite"><div class="petit">À facturer (HT)</div><div class="grand">${euros(aFacturer)}</div></div></div>
+    <div class="puces"><button class="puce" data-tri="jour" aria-pressed="${!ETAT.parMission}">Par jour</button><button class="puce" data-tri="mission" aria-pressed="${ETAT.parMission}">Par mission</button>
+      <button class="puce" data-nf aria-pressed="${ETAT.nonFacturees}">Non facturées</button></div>
+    ${groupes.length ? groupes.map(([titre, l, pm]) => { const t = l.reduce((x, s) => x + s.minutes, 0);
+      return `<div class="groupe"><span>${echap(titre)}</span><span>${duree(t)}${pm ? " · " + jours(t) : ""}</span></div>` + l.map(ligneHTML).join(""); }).join("")
+      : `<p class="vide">${D.saisies.length ? "Aucune saisie sur cette période." : "Aucune saisie pour l’instant. Démarrez le chrono ou touchez + pour ajouter un temps."}</p>`}
+    <button class="fab" id="ajouter" aria-label="Ajouter un temps">+</button>`;
+
+  // Événements
+  $("#vue").querySelectorAll("[data-periode]").forEach(b => b.onclick = () => { ETAT.periode = b.dataset.periode; ETAT.decalage = 0; rendre(); });
+  $("#vue").querySelectorAll("[data-dec]").forEach(b => b.onclick = () => { const v = +b.dataset.dec; ETAT.decalage = v === 0 ? 0 : ETAT.decalage + v; rendre(); });
+  $("#vue").querySelectorAll("[data-tri]").forEach(b => b.onclick = () => { ETAT.parMission = b.dataset.tri === "mission"; rendre(); });
+  $("[data-nf]").onclick = () => { ETAT.nonFacturees = !ETAT.nonFacturees; rendre(); };
+  $("#ajouter").onclick = () => {
+    if (!D.missions.some(m => !m.terminee)) { toast("Créez d’abord une mission"); location.hash = "#missions"; return; }
+    ouvrirSaisie(null, {});
+  };
+  const sm = $("[data-c='mission']"); if (sm) sm.onchange = () => { C.missionId = sm.value || null; sauverChrono(); rendre(); };
+  const si = $("[data-c='intervenant']"); if (si) si.onchange = () => { C.intervenantId = si.value || null; sauverChrono(); rendre(); };
+  $("#vue").querySelectorAll("[data-a]").forEach(b => b.onclick = () => ({ depart: demarrer, pause: basculerPause, arret: arreter })[b.dataset.a]());
+  $("#vue").querySelectorAll(".glisse").forEach(activerGlisser);
+}
+
+// ------------------------------------------------------------ Glisser une ligne (action réglable, une seule fois)
+const ACTIONS = { aujourdhui: "Dupliquer à aujourd’hui", memejour: "Dupliquer (même date)", modifier: "Dupliquer et modifier", supprimer: "Supprimer", aucune: "Aucune action" };
+function activerGlisser(el) {
+  const ligne = el.querySelector(".ligne"), fond = el.querySelector(".fond-action");
+  const s = D.saisies.find(x => x.id === el.dataset.id);
+  let x0 = 0, y0 = 0, dx = 0, actif = false, bouge = false;
+  ligne.addEventListener("pointerdown", e => { x0 = e.clientX; y0 = e.clientY; dx = 0; actif = true; bouge = false; });
+  ligne.addEventListener("pointermove", e => {
+    if (!actif) return;
+    const ddx = e.clientX - x0, ddy = e.clientY - y0;
+    if (!bouge && Math.abs(ddx) > 10 && Math.abs(ddx) > Math.abs(ddy)) { bouge = true; el.classList.add("en-cours"); ligne.setPointerCapture(e.pointerId); }
+    if (!bouge) return;
+    const action = ddx > 0 ? D.reglages.glisserDroite : D.reglages.glisserGauche;
+    dx = action === "aucune" ? 0 : ddx;
+    ligne.style.transform = `translateX(${dx}px)`;
+    const seuil = el.offsetWidth * .35;
+    fond.textContent = ACTIONS[action]; fond.className = "fond-action" + (ddx < 0 ? " gauche" : "") + (action === "supprimer" ? " danger" : "");
+    fond.style.opacity = dx === 0 ? 0 : Math.abs(dx) >= seuil ? 1 : .5;
+  });
+  const fin = () => {
+    if (!actif) return; actif = false;
+    el.classList.remove("en-cours"); ligne.style.transform = ""; fond.style.opacity = 0;
+    if (!bouge) return;
+    const seuil = el.offsetWidth * .35;
+    if (Math.abs(dx) >= seuil) agir(dx > 0 ? D.reglages.glisserDroite : D.reglages.glisserGauche, s);
+  };
+  ligne.addEventListener("pointerup", fin); ligne.addEventListener("pointercancel", fin);
+  ligne.addEventListener("click", e => { if (bouge) { e.preventDefault(); return; } if (s.statut === "facture") { toast("Temps facturé : non modifiable"); return; } ouvrirSaisie(s); });
+}
+function agir(action, s) {
+  if (action === "aucune") return;
+  if (action === "supprimer") {
+    if (s.statut === "facture") { toast("Temps facturé : suppression impossible"); return; }
+    const i = D.saisies.indexOf(s); D.saisies.splice(i, 1); sauver(); rendre();
+    toast("Temps supprimé", "Annuler", () => { D.saisies.splice(i, 0, s); sauver(); rendre(); });
+    return;
+  }
+  const jour = action === "memejour" ? s.jour : isoJour();
+  const copie = Object.assign({}, s, { id: uid(), jour, statut: s.statut === "nonfact" ? "nonfact" : "afacturer" });
+  D.saisies.push(copie); sauver();
+  if (action === "modifier") { ouvrirSaisie(copie); return; }
+  rendre();
+  toast("Temps dupliqué au " + jourCourt(jour), "Annuler", () => { D.saisies = D.saisies.filter(x => x.id !== copie.id); sauver(); rendre(); });
+}
+
+// ------------------------------------------------------------ Formulaire de saisie (plein écran)
+const DEMI_HEURES = Array.from({ length: 48 }, (_, i) => texteHeure(i * 30));
+function champHeure(nom, valeur, libelle, liste) {
+  return `<label class="champ"><span>${libelle}</span><input name="${nom}" value="${valeur}" inputmode="numeric" autocomplete="off" list="${liste}" placeholder="09:30"></label>`;
+}
+function formaterHeure(input) {
+  input.addEventListener("input", () => {
+    const c = input.value.replace(/\D/g, ""), max = c[0] > "2" ? 3 : 4, v = c.slice(0, max);
+    input.value = v.length === 3 && v[0] > "2" ? v[0] + ":" + v.slice(1) : v.length > 2 ? v.slice(0, 2) + ":" + v.slice(2) : v;
+  });
+}
+function ouvrirSaisie(s, pre = {}) {
+  const nouveau = !s;
+  const maintenant = new Date(), mn = maintenant.getHours() * 60 + Math.floor(maintenant.getMinutes() / 30) * 30;
+  const derniere = D.saisies.slice().sort((a, b) => b.jour.localeCompare(a.jour))[0];
+  const v = s ? Object.assign({}, s) : {
+    jour: pre.jour || isoJour(), debut: pre.debut ?? Math.max(0, mn - 60), fin: pre.fin ?? mn, pause: pre.pause || 0,
+    missionId: pre.missionId || (derniere && mission(derniere.missionId) && !mission(derniere.missionId).terminee ? derniere.missionId : D.missions.find(m => !m.terminee)?.id),
+    intervenantId: pre.intervenantId || C.intervenantId || null, description: "", statut: "afacturer",
+  };
+  const missions = D.missions.filter(m => !m.terminee || m.id === v.missionId);
+  const intervs = D.intervenants.filter(i => i.actif !== false || i.id === v.intervenantId);
+  const verrou = s && s.statut === "facture";
+  history.pushState({ panneau: 1 }, "");
+  const fermer = () => { if (history.state && history.state.panneau) history.back(); else rendre(); };
+  const enregistrer = () => {
+    const f = $("#form"), mId = f.mission.value, m = mission(mId);
+    const d = versMinutes(f.debut.value), fi = versMinutes(f.fin.value), pa = f.pause.value.trim() ? versMinutes(f.pause.value) : 0;
+    if (!m || d == null || fi == null || pa == null || fi - d - pa <= 0) return;
+    const obj = Object.assign(s || { id: uid() }, {
+      jour: f.jour.value, debut: d, fin: fi, pause: pa, minutes: fi - d - pa, missionId: m.id, clientId: m.clientId,
+      intervenantId: f.intervenant ? (f.intervenant.value || null) : null, description: f.description.value.trim(),
+      statut: f.statut.value,
+    });
+    if (nouveau) D.saisies.push(obj);
+    if (obj.intervenantId) C.intervenantId = obj.intervenantId, sauverChrono();
+    sauver(); toast(nouveau ? "Temps enregistré" : "Temps modifié"); fermer();
+  };
+  barre(nouveau ? "Nouvelle saisie" : "Modifier la saisie", fermer, { libelle: "Enregistrer", faire: enregistrer, inactif: verrou });
+  $("#vue").innerHTML = `<form id="form" autocomplete="off" onsubmit="return false">
+    ${verrou ? `<p class="note ko">Ce temps figure sur une facture : il n’est plus modifiable.</p>` : ""}
+    <div class="section">Mission</div>
+    <label class="champ"><span>Mission</span><select name="mission">${missions.map(m => `<option value="${m.id}" ${m.id === v.missionId ? "selected" : ""}>${echap(nomMission(m))}</option>`).join("")}</select></label>
+    ${intervs.length ? `<label class="champ"><span>Intervenant</span><select name="intervenant"><option value="">—</option>${intervs.map(i => `<option value="${i.id}" ${i.id === v.intervenantId ? "selected" : ""}>${echap(i.nom)}</option>`).join("")}</select></label>` : ""}
+    <div class="section">Horaires</div>
+    <label class="champ"><span>Date</span><input type="date" name="jour" value="${v.jour}"></label>
+    <div class="deux">${champHeure("debut", v.debut != null ? texteHeure(v.debut) : "", "Début", "demi-heures")}${champHeure("fin", v.fin != null ? texteHeure(v.fin) : "", "Fin", "demi-heures")}</div>
+    ${champHeure("pause", texteHeure(v.pause || 0), "Pause non facturée (h:mm)", "pauses")}
+    <p class="note" id="calcul"></p>
+    <label class="champ"><span>Description du travail réalisé</span><textarea name="description">${echap(v.description)}</textarea></label>
+    <div class="section">Facturation</div>
+    <label class="champ"><span>Statut</span><select name="statut" ${verrou ? "disabled" : ""}>
+      ${(verrou ? [["facture", "Facturée"]] : [["afacturer", "À facturer"], ["ancien", "Déjà facturé (ancien outil)"], ["nonfact", "Non facturable"]])
+        .map(([c, l]) => `<option value="${c}" ${(v.statut || "afacturer") === c ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+    <p class="note" id="valeur"></p>
+    <button class="btn large" type="button" id="enreg" ${verrou ? "disabled" : ""}>Enregistrer</button>
+    ${!nouveau && !verrou ? `<button class="btn danger large" type="button" id="suppr" style="margin-top:10px">Supprimer ce temps</button>` : ""}
+    <datalist id="demi-heures">${DEMI_HEURES.map(h => `<option value="${h}">`).join("")}</datalist>
+    <datalist id="pauses">${[0, 15, 30, 45, 60, 75, 90, 120].map(m => `<option value="${texteHeure(m)}">`).join("")}</datalist>
+  </form>`;
+  const f = $("#form");
+  ["debut", "fin", "pause"].forEach(n => formaterHeure(f[n]));
+  const maj = () => {
+    const d = versMinutes(f.debut.value), fi = versMinutes(f.fin.value), pa = f.pause.value.trim() ? versMinutes(f.pause.value) : 0;
+    const el = $("#calcul"), ok = d != null && fi != null && pa != null && fi - d - pa > 0;
+    el.className = "note " + (ok ? "ok" : "ko");
+    el.textContent = ok ? `Temps facturable : ${duree(fi - d - pa)} (${jours(fi - d - pa)})${pa ? `, pause de ${duree(pa)} déduite` : ""}`
+      : d != null && fi != null && fi <= d ? "L’heure de fin doit être après l’heure de début"
+      : d != null && fi != null && pa != null ? "La pause dépasse la plage horaire" : "Tapez 0930 (le « : » s’ajoute seul) ou choisissez dans la liste";
+    const m = mission(f.mission.value), t = m ? (m.tjm || client(m.clientId)?.tjm || 0) : 0;
+    $("#valeur").textContent = ok && t ? `Valorisation : ${euros(Math.round((fi - d - pa) * t / base()))} HT (TJM ${euros(t)})` : (m && !t ? "Aucun TJM défini pour cette mission ni pour le client." : "");
+    $("#enreg").disabled = verrou || !ok || !m; const a = $("#barre .action"); if (a) a.disabled = verrou || !ok || !m;
+  };
+  f.addEventListener("input", maj); f.addEventListener("change", maj); maj();
+  $("#enreg").onclick = enregistrer;
+  const sup = $("#suppr"); if (sup) sup.onclick = () => { D.saisies = D.saisies.filter(x => x.id !== s.id); sauver(); toast("Temps supprimé"); fermer(); };
+  window.scrollTo(0, 0);
+}
+
+// ------------------------------------------------------------ Écran Missions (clients et missions)
+function rendreMissions() {
+  barre("Missions");
+  const parClient = D.clients.slice().sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
+  $("#vue").innerHTML = (parClient.length ? parClient.map(c => {
+    const ms = D.missions.filter(m => m.clientId === c.id).sort((a, b) => (a.terminee - b.terminee) || a.nom.localeCompare(b.nom, "fr"));
+    return `<div class="groupe"><span>${echap(c.nom)}</span><button class="btn texte" data-client="${c.id}">Modifier</button></div>
+      ${c.tjm ? `<p class="note">TJM par défaut : ${euros(c.tjm)} HT / jour</p>` : `<p class="note ko">Aucun TJM par défaut</p>`}
+      ${ms.map(m => {
+        const reel = D.saisies.filter(s => s.missionId === m.id && s.statut !== "nonfact").reduce((t, s) => t + s.minutes, 0);
+        const prevu = Math.round((m.prevuCentJours || 0) * base() / 100);
+        const ratio = prevu ? reel / prevu : 0;
+        return `<button class="carte" style="display:block;width:100%;text-align:left" data-mission="${m.id}">
+          <div class="entete"><span>${echap(m.nom)}</span><span style="font-weight:500;color:var(--texte-2)">${m.terminee ? "Terminée" : ""}</span></div>
+          ${prevu ? `<div class="barre-progres ${reel > prevu ? "depasse" : ""}"><i style="width:${Math.min(100, ratio * 100)}%"></i></div>
+            <div class="note">Réel ${jours(reel)} sur ${depuisCentiemes(m.prevuCentJours)} j prévus (${Math.round(ratio * 100)} %) · ${reel > prevu ? "dépassement de " + duree(reel - prevu) : "reste " + duree(prevu - reel)}</div>`
+            : `<div class="note">Réel ${jours(reel)} (${duree(reel)}), pas de prévisionnel</div>`}
+        </button>`; }).join("")}
+      <button class="btn contour large" data-nouvelle="${c.id}" style="margin:4px 0 8px">+ Mission pour ${echap(c.nom)}</button>`;
+  }).join("") : `<p class="vide">Ajoutez votre premier client, puis ses missions.</p>`) +
+    `<button class="btn large" id="nouveau-client" style="margin-top:16px">+ Nouveau client</button>`;
+  $("#vue").querySelectorAll("[data-client]").forEach(b => b.onclick = () => ouvrirClient(client(b.dataset.client)));
+  $("#vue").querySelectorAll("[data-mission]").forEach(b => b.onclick = () => ouvrirMission(mission(b.dataset.mission)));
+  $("#vue").querySelectorAll("[data-nouvelle]").forEach(b => b.onclick = () => ouvrirMission(null, b.dataset.nouvelle));
+  $("#nouveau-client").onclick = () => ouvrirClient(null);
+}
+function panneau(titre, html, enregistrer) {
+  history.pushState({ panneau: 1 }, "");
+  const fermer = () => { if (history.state && history.state.panneau) history.back(); else rendre(); };
+  barre(titre, fermer, { libelle: "Enregistrer", faire: () => enregistrer(fermer) });
+  $("#vue").innerHTML = `<form id="form" autocomplete="off" onsubmit="return false">${html}<button class="btn large" type="button" id="enreg" style="margin-top:14px">Enregistrer</button></form>`;
+  $("#enreg").onclick = () => enregistrer(fermer);
+  window.scrollTo(0, 0);
+  return fermer;
+}
+function ouvrirClient(c) {
+  const fermer = panneau(c ? "Client" : "Nouveau client", `
+    <label class="champ"><span>Nom / raison sociale</span><input name="nom" value="${echap(c?.nom || "")}"></label>
+    <label class="champ"><span>TJM par défaut HT (€ / jour)</span><input name="tjm" inputmode="decimal" value="${c?.tjm ? depuisCentiemes(c.tjm) : ""}"></label>
+    ${c ? `<button class="btn danger large" type="button" id="suppr" style="margin-top:10px">Supprimer ce client</button>` : ""}`,
+    ferme => {
+      const f = $("#form"), nom = f.nom.value.trim(); if (!nom) { toast("Indiquez un nom"); return; }
+      const o = c || { id: uid() }; o.nom = nom; o.tjm = versCentiemes(f.tjm.value) || 0;
+      if (!c) D.clients.push(o); sauver(); ferme();
+    });
+  const s = $("#suppr"); if (s) s.onclick = () => {
+    if (D.missions.some(m => m.clientId === c.id)) { toast("Ce client a des missions : suppression impossible"); return; }
+    D.clients = D.clients.filter(x => x.id !== c.id); sauver(); fermer();
+  };
+}
+function ouvrirMission(m, clientId) {
+  const fermer = panneau(m ? "Mission" : "Nouvelle mission", `
+    <label class="champ"><span>Client</span><select name="client">${D.clients.map(c => `<option value="${c.id}" ${(m?.clientId || clientId) === c.id ? "selected" : ""}>${echap(c.nom)}</option>`).join("")}</select></label>
+    <label class="champ"><span>Nom de la mission</span><input name="nom" value="${echap(m?.nom || "")}"></label>
+    <div class="deux"><label class="champ"><span>Prévisionnel (jours)</span><input name="prevu" inputmode="decimal" value="${m?.prevuCentJours ? depuisCentiemes(m.prevuCentJours) : ""}"></label>
+    <label class="champ"><span>TJM HT (vide = celui du client)</span><input name="tjm" inputmode="decimal" value="${m?.tjm ? depuisCentiemes(m.tjm) : ""}"></label></div>
+    <label class="interrupteur"><span>Mission terminée (masquée du chrono)</span><input type="checkbox" name="terminee" ${m?.terminee ? "checked" : ""}></label>
+    ${m ? `<button class="btn danger large" type="button" id="suppr">Supprimer cette mission</button>` : ""}`,
+    ferme => {
+      const f = $("#form"), nom = f.nom.value.trim(); if (!nom || !f.client.value) { toast("Indiquez le client et le nom"); return; }
+      const o = m || { id: uid() };
+      Object.assign(o, { clientId: f.client.value, nom, prevuCentJours: versCentiemes(f.prevu.value) || 0, tjm: versCentiemes(f.tjm.value) || 0, terminee: f.terminee.checked });
+      if (!m) D.missions.push(o); sauver(); ferme();
+    });
+  const s = $("#suppr"); if (s) s.onclick = () => {
+    if (D.saisies.some(x => x.missionId === m.id)) { toast("Des temps sont rattachés : marquez-la plutôt terminée"); return; }
+    D.missions = D.missions.filter(x => x.id !== m.id); sauver(); fermer();
+  };
+}
+
+// ------------------------------------------------------------ Réglages, import / export
+function rendreReglages() {
+  barre("Réglages");
+  const r = D.reglages;
+  const opt = (sel, val) => Object.entries(ACTIONS).map(([c, l]) => `<option value="${c}" ${val === c ? "selected" : ""}>${l}</option>`).join("");
+  $("#vue").innerHTML = `
+    <div class="section">Travail</div>
+    <label class="champ"><span>Base de travail (heures par jour)</span><input id="base" inputmode="decimal" value="${String(r.baseMinutes / 60).replace(".", ",")}"></label>
+    <label class="interrupteur"><span>Sons du chrono (démarrage, arrêt, carillon chaque heure, appli ouverte)</span><input type="checkbox" id="sons" ${r.sons ? "checked" : ""}></label>
+    <div class="section">Apparence</div>
+    <div class="puces">${[["clair", "Clair"], ["sombre", "Sombre"], ["auto", "Système"]].map(([c, l]) => `<button class="puce" data-theme-choix="${c}" aria-pressed="${r.theme === c}">${l}</button>`).join("")}</div>
+    <div class="section">Glisser une ligne de temps</div>
+    <label class="champ"><span>Vers la droite</span><select id="gd">${opt("gd", r.glisserDroite)}</select></label>
+    <label class="champ"><span>Vers la gauche</span><select id="gg">${opt("gg", r.glisserGauche)}</select></label>
+    <div class="section">Intervenants</div>
+    ${D.intervenants.map(i => `<div class="interrupteur"><span>${echap(i.nom)}</span><button class="btn texte" data-retirer="${i.id}">Retirer</button></div>`).join("") || `<p class="note">Aucun intervenant.</p>`}
+    <div class="deux"><input id="nouvel-intervenant" placeholder="Nom" style="padding:12px;border-radius:12px;border:1px solid var(--trait);background:var(--surface)"><button class="btn contour" id="ajout-intervenant">Ajouter</button></div>
+    <div class="section">Données</div>
+    <p class="note">${D.clients.length} client(s), ${D.missions.length} mission(s), ${D.saisies.length} temps, enregistrés sur cet appareil.</p>
+    <label class="btn contour large" style="display:block;text-align:center">Importer un fichier Chronéo…<input type="file" id="import" accept=".json,application/json" hidden></label>
+    <p class="note">Accepte la sauvegarde ou le fichier de données de l’appli Android (clients, missions et temps), une extraction de temps, ou une sauvegarde de cette version web. Les données sont ajoutées, sans doublon.</p>
+    <button class="btn contour large" id="export-temps" style="margin-top:8px">Exporter les temps pour l’appli Android</button>
+    <p class="note">Fichier au format « extraction de temps », à importer dans l’appli Android via Réglages, Données, Importer des temps.</p>
+    <button class="btn contour large" id="export-tout" style="margin-top:8px">Sauvegarder toutes les données</button>
+    <button class="btn danger large" id="effacer" style="margin-top:22px">Effacer toutes les données de cet appareil</button>
+    <p class="note" style="margin-top:18px">Chronéo web · BIRDYEYES Solutions · gestion des temps et de la facturation. Facturation Factur-X, achats et bilan : appli Android.</p>`;
+  $("#base").onchange = e => { const m = Math.round((parseFloat(e.target.value.replace(",", ".")) || 8) * 60); r.baseMinutes = m > 0 ? m : 480; sauver(); };
+  $("#sons").onchange = e => { r.sons = e.target.checked; sauver(); if (r.sons) son("depart"); };
+  $("#vue").querySelectorAll("[data-theme-choix]").forEach(b => b.onclick = () => { r.theme = b.dataset.themeChoix; sauver(); appliquerTheme(); rendre(); });
+  $("#gd").onchange = e => { r.glisserDroite = e.target.value; sauver(); };
+  $("#gg").onchange = e => { r.glisserGauche = e.target.value; sauver(); };
+  $("#ajout-intervenant").onclick = () => { const n = $("#nouvel-intervenant").value.trim(); if (!n) return; D.intervenants.push({ id: uid(), nom: n, actif: true }); sauver(); rendre(); };
+  $("#vue").querySelectorAll("[data-retirer]").forEach(b => b.onclick = () => {
+    const i = intervenant(b.dataset.retirer); if (D.saisies.some(s => s.intervenantId === i.id)) { i.actif = false; toast(i.nom + " désactivé (des temps lui sont rattachés)"); }
+    else D.intervenants = D.intervenants.filter(x => x.id !== i.id);
+    sauver(); rendre();
+  });
+  $("#import").onchange = async e => { const f = e.target.files[0]; if (!f) return; try { const n = importer(JSON.parse(await f.text())); toast(n + " élément(s) importé(s)"); rendre(); } catch (err) { toast("Fichier non reconnu : " + err.message); } e.target.value = ""; };
+  $("#export-temps").onclick = () => enregistrerFichier("chroneo-temps-web-" + isoJour() + ".json", JSON.stringify(exportTemps(), null, 1));
+  $("#export-tout").onclick = () => enregistrerFichier("chroneo-web-sauvegarde-" + isoJour() + ".json", JSON.stringify({ format: "Chroneo-web", version: 1, date: new Date().toISOString(), donnees: D }, null, 1));
+  // Confirmation en deux temps (pas de fenêtre surgissante)
+  $("#effacer").onclick = e => {
+    const b = e.currentTarget;
+    if (b.dataset.arme) { D = structuredClone(VIDE); sauver(); toast("Données effacées"); rendre(); return; }
+    b.dataset.arme = "1"; b.textContent = "Touchez à nouveau pour tout effacer (définitif)";
+    setTimeout(() => { if (b.isConnected) { delete b.dataset.arme; b.textContent = "Effacer toutes les données de cet appareil"; } }, 4000);
+  };
+}
+async function enregistrerFichier(nom, texte) {
+  try {
+    const dl = window.claude && window.claude.use ? await window.claude.use("downloads") : null;
+    if (dl) { await dl.save({ filename: nom, data: texte }); toast("Fichier enregistré"); return; }
+  } catch (e) { if (e && e.code === "declined") return; }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([texte], { type: "application/json" })); a.download = nom;
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+function exportTemps() {
+  return { format: "GestionTemps-temps", source: "Chronéo web", genereLe: new Date().toISOString(),
+    temps: D.saisies.slice().sort((a, b) => a.jour.localeCompare(b.jour)).map(s => ({
+      date: s.jour, heureDebut: s.debut != null ? texteHeure(s.debut) : null, heureFin: s.fin != null ? texteHeure(s.fin) : null,
+      pauseMinutes: s.pause || 0, dureeMinutes: s.minutes, intervenant: intervenant(s.intervenantId)?.nom || null,
+      client: client(s.clientId)?.nom || "?", mission: mission(s.missionId)?.nom || "Général", description: s.description || "",
+      facturable: s.statut !== "nonfact", facture: s.statut === "facture" || s.statut === "ancien" ? "facturé" : null,
+    })) };
+}
+
+/* Import : sauvegarde Android (« GestionTemps-sauvegarde »), extraction de temps (« GestionTemps-temps »)
+   ou sauvegarde web. Rapprochement par nom (clients, missions, intervenants), doublons ignorés. */
+function importer(j) {
+  const cle = s => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
+  const trouverClient = (nom, tjm) => { let c = D.clients.find(x => cle(x.nom) === cle(nom)); if (!c) { c = { id: uid(), nom: String(nom).trim(), tjm: tjm || 0 }; D.clients.push(c); } else if (!c.tjm && tjm) c.tjm = tjm; return c; };
+  const trouverMission = (c, nom, extra) => { let m = D.missions.find(x => x.clientId === c.id && cle(x.nom) === cle(nom)); if (!m) { m = Object.assign({ id: uid(), clientId: c.id, nom: String(nom).trim(), prevuCentJours: 0, tjm: 0, terminee: false }, extra || {}); D.missions.push(m); } return m; };
+  const trouverInterv = nom => { if (!nom) return null; let i = D.intervenants.find(x => cle(x.nom) === cle(nom)); if (!i) { i = { id: uid(), nom: String(nom).trim(), actif: true }; D.intervenants.push(i); } return i; };
+  const doublon = s => D.saisies.some(x => x.jour === s.jour && x.debut === s.debut && x.minutes === s.minutes && x.missionId === s.missionId);
+  let n = 0;
+  const ajouter = s => { if (!doublon(s)) { D.saisies.push(s); n++; } };
+
+  if (j.format === "GestionTemps-sauvegarde") {
+    const clients = {}, missions = {}, interv = {};
+    (j.clients || []).forEach(c => clients[c.id] = trouverClient(c.nom, c.tauxJournalierCents || 0));
+    (j.intervenants || []).forEach(i => { const x = trouverInterv(i.nom); x.actif = i.actif !== false; interv[i.id] = x; });
+    (j.missions || []).forEach(m => { const c = clients[m.clientId]; if (c) missions[m.id] = trouverMission(c, m.nom, { prevuCentJours: m.dureePrevueCentiemesJour || 0, tjm: m.tauxJournalierCents || 0, terminee: !!m.terminee }); });
+    if (j.emetteur && j.emetteur.minutesParJour) D.reglages.baseMinutes = j.emetteur.minutesParJour;
+    (j.saisies || []).forEach(s => {
+      const m = missions[s.missionId], c = clients[s.clientId] || (m && client(m.clientId)); if (!c) return;
+      const mm = m || trouverMission(c, "Général");
+      const fid = s.factureId;
+      ajouter({ id: uid(), jour: s.jour, debut: s.heureDebut ?? null, fin: s.heureFin ?? null, pause: s.pauseMinutes || 0, minutes: s.minutes,
+        missionId: mm.id, clientId: c.id, intervenantId: interv[s.intervenantId]?.id || null, description: s.description || "",
+        statut: fid == null ? "afacturer" : fid === -2 ? "nonfact" : fid === -1 ? "ancien" : "facture" });
+    });
+  } else if (j.format === "GestionTemps-temps") {
+    (j.temps || []).forEach(t => {
+      const c = trouverClient(t.client || "?"), m = trouverMission(c, t.mission || "Général"), i = trouverInterv(t.intervenant);
+      const d = t.heureDebut ? versMinutes(t.heureDebut) : null, f = t.heureFin ? versMinutes(t.heureFin) : null;
+      ajouter({ id: uid(), jour: t.date, debut: d, fin: f, pause: t.pauseMinutes || 0, minutes: t.dureeMinutes ?? (f - d - (t.pauseMinutes || 0)),
+        missionId: m.id, clientId: c.id, intervenantId: i?.id || null, description: t.description || "",
+        statut: t.facturable === false ? "nonfact" : t.facture ? "ancien" : "afacturer" });
+    });
+  } else if (j.format === "Chroneo-web" && j.donnees) {
+    const w = j.donnees, cs = {}, ms = {}, is = {};
+    (w.clients || []).forEach(c => cs[c.id] = trouverClient(c.nom, c.tjm));
+    (w.intervenants || []).forEach(i => is[i.id] = trouverInterv(i.nom));
+    (w.missions || []).forEach(m => { if (cs[m.clientId]) ms[m.id] = trouverMission(cs[m.clientId], m.nom, { prevuCentJours: m.prevuCentJours, tjm: m.tjm, terminee: m.terminee }); });
+    (w.saisies || []).forEach(s => { const m = ms[s.missionId]; if (m) ajouter(Object.assign({}, s, { id: uid(), missionId: m.id, clientId: m.clientId, intervenantId: is[s.intervenantId]?.id || null })); });
+  } else throw new Error("format inconnu");
+  sauver();
+  return n;
+}
+
+// ------------------------------------------------------------ Navigation (#temps, #missions, #reglages)
+function rendre() {
+  const v = (location.hash || "#temps").slice(1);
+  const vue = ["temps", "missions", "reglages"].includes(v) ? v : "temps";
+  document.querySelectorAll("#onglets a").forEach(a => a.setAttribute("aria-current", a.getAttribute("href") === "#" + vue ? "page" : "false"));
+  ({ temps: rendreTemps, missions: rendreMissions, reglages: rendreReglages })[vue]();
+}
+window.addEventListener("hashchange", rendre);
+window.addEventListener("popstate", () => rendre());   // retour depuis un formulaire (bouton ou geste « retour »)
+document.addEventListener("visibilitychange", () => { if (!document.hidden && !$("#form")) rendre(); });
+appliquerTheme();
+rendre();
+
+// Mode hors connexion quand l'appli est hébergée sur votre propre site
+if ("serviceWorker" in navigator && location.protocol === "https:") {
+  navigator.serviceWorker.register("sw.js").catch(() => { /* non disponible dans cet aperçu */ });
+}
+</script>
+</body>
+</html>

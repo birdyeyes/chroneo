@@ -1,0 +1,27 @@
+Chronéo – version web (PWA) – saisie des temps et chrono
+=========================================================
+
+Contenu
+  index.html               l'application (un seul fichier)
+  manifest.webmanifest     nom, icônes et couleurs pour l'installation sur l'écran d'accueil
+  sw.js                    fonctionnement hors connexion
+  icone-*.png              icônes (Android, iPhone)
+
+Mise en ligne (gratuite)
+  Déposez CES FICHIERS tels quels dans un hébergement HTTPS, par exemple :
+  - Netlify Drop (app.netlify.com/drop) : glisser-déposer le dossier, une adresse est créée ;
+  - GitHub Pages ;
+  - votre hébergement web (OVH, o2switch…), dans un sous-dossier /chroneo/.
+  Le HTTPS est obligatoire pour l'installation et le mode hors connexion.
+
+Installation sur le téléphone
+  - Android (Chrome) : ouvrir l'adresse, menu ⋮ > « Installer l'application ».
+  - iPhone (Safari)  : ouvrir l'adresse, bouton Partager > « Sur l'écran d'accueil ».
+
+Données
+  Elles sont enregistrées sur le téléphone, dans l'application. Pensez à
+  « Sauvegarder toutes les données » de temps en temps (Réglages).
+  Échanges avec l'appli Android :
+  - Import : sauvegarde ou fichier de données Android, extraction de temps.
+  - Export : « Exporter les temps pour l'appli Android », puis dans l'appli
+    Android : Réglages > Données / JSON > Importer des temps.
