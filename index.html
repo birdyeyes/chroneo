@@ -744,16 +744,14 @@ const statutDe = s => s.statut || "afacturer";   // afacturer | facture | ancien
 const partieEmetteur = e => ({ nom: e.raisonSociale, siren: e.siren, siret: e.siret, tvaIntra: e.tvaIntra, adresse: e.adresse, codePostal: e.codePostal, ville: e.ville, pays: e.pays, email: e.email });
 const partieClient = c => ({ nom: c.nom, siren: c.siren, siret: "", tvaIntra: c.tvaIntra, adresse: c.adresse, codePostal: c.codePostal, ville: c.ville, pays: c.pays || "FR", email: c.email });
 
-/** Montants d'un achat : TTC, TVA contenue, part récupérable.
- *  Indemnités km : sans TVA ; les péages du trajet s'y ajoutent (TVA 20 %, récupérable ou non). */
-const TAUX_PEAGE = 2000;
+/** Montants d'un achat : TTC, TVA contenue, part récupérable (indemnités km : sans TVA). */
 function montantsAchat(a) {
-  if (a.km > 0) {
-    const ik = Math.round(a.km * a.prixKmMil / 10), peage = a.peage || 0, tvaP = tvaDepuisTtc(peage, TAUX_PEAGE);
-    return { ttc: ik + peage, tva: tvaP, ht: ik + peage - tvaP, recup: a.peageRecup ? tvaP : 0, ik, peage };
+  if (a.km > 0 || (a.peages > 0 && a.categorie === "DEPLACEMENT" && !a.ttc)) {   // indemnités km (sans TVA) + péages TTC (TVA 20 % incluse)
+    const ik = Math.round((a.km || 0) * (a.prixKmMil || 0) / 10), p = a.peages || 0, tva = tvaDepuisTtc(p, 2000);
+    return { ttc: ik + p, tva, ht: ik + p - tva, recup: a.recuperable ? tva : 0, ik, peages: p };
   }
   const ttc = a.ttc || 0, tva = tvaDepuisTtc(ttc, a.tauxTva || 0);
-  return { ttc, tva, ht: ttc - tva, recup: a.recuperable ? tva : 0, ik: 0, peage: 0 };
+  return { ttc, tva, ht: ttc - tva, recup: a.recuperable ? tva : 0 };
 }
 
 // ------------------------------------------------------------ Message en bas d'écran
@@ -1566,8 +1564,8 @@ function rendreAchats() {
       return `<div class="groupe"><span>${majuscule(MOIS[m - 1])} ${a}</span><span>${euros(l.reduce((t, x) => t + montantsAchat(x).ttc, 0))}</span></div>` + l.map(x => {
         const mt = montantsAchat(x), nj = D.justificatifs.filter(j => j.achatId === x.id).length;
         return `<button class="carte cliquable" data-a="${x.id}"><div class="entete"><span>${echap(x.fournisseur || x.description || "Sans libellé")}</span><span>${euros(mt.ttc)}</span></div>
-          <div class="petit">${jourCourt(x.jour)}, ${x.categorie === "DEPLACEMENT" ? "déplacement" : "achat"}${x.km ? ", " + x.km + " km" : ""}${x.km && x.peage ? ", péages " + euros(x.peage) : ""}${x.fournisseur && x.description ? ", " + echap(x.description) : ""}</div>
-          <div class="petit">${mt.recup ? `<span class="accent-t">TVA récupérable ${euros(mt.recup)}</span>` : "TVA non récupérable"}, ${nj ? nj + " justificatif(s)" : `<span class="erreur-t">aucun justificatif</span>`}</div></button>`; }).join(""); }).join("")
+          <div class="petit">${jourCourt(x.jour)}, ${x.categorie === "DEPLACEMENT" ? "déplacement" : "achat"}${x.km ? ", " + x.km + " km" + (x.peages ? " + péages" : "") : ""}${x.fournisseur && x.description ? ", " + echap(x.description) : ""}</div>
+          <div class="petit">${mt.recup ? `<span class="accent-t">TVA récupérable ${euros(mt.recup)}${x.jourDeclarationTva ? ", déclarée" : ", à déclarer"}</span>` : "TVA non récupérable"}, ${nj ? nj + " justificatif(s)" : `<span class="erreur-t">aucun justificatif</span>`}</div></button>`; }).join(""); }).join("")
       || `<p class="vide">Ajoutez vos frais de déplacement et achats avec le bouton +.</p>`) +
     `<button class="fab" id="ajouter" aria-label="Ajouter un achat">+</button>`);
   $$("[data-a]").forEach(b => b.onclick = () => { ecranAchat.etat = null; const a = D.achats.find(x => x.id === b.dataset.a); ouvrir(() => ecranAchat(a)); });
@@ -1595,19 +1593,27 @@ async function lireJustificatif(blob) {
 }
 
 // ------------------------------------------------------------ Formulaire
+function texteMontantAchat(m, v, modeKm) {
+  if (modeKm) return `Indemnités ${euros(m.ik || 0)} (sans TVA)${v.peages > 0 ? ` + péages ${euros(v.peages)} (dont TVA ${euros(m.tva)}, ${v.recuperable ? "récupérable" : "non récupérable"})` : ""} = ${euros(m.ttc)}`;
+  return `HT ${euros(m.ht)}, TVA ${euros(m.tva)}${m.tva ? (v.recuperable ? " (récupérable)" : " (non récupérable)") : ""}`;
+}
 function ecranAchat(a) {
   // état de travail conservé entre deux rendus (pièces ajoutées, suggestion OCR)
   const etat = ecranAchat.etat && ecranAchat.etat.id === (a ? a.id : "nouveau") ? ecranAchat.etat
-    : (ecranAchat.etat = { id: a ? a.id : "nouveau", v: a ? { ...a } : { jour: isoJour(), categorie: "ACHAT", fournisseur: "", description: "", ttc: 0, tauxTva: 2000, recuperable: true, km: 0, prixKmMil: 0, peage: 0, peageRecup: true, missionId: null },
+    : (ecranAchat.etat = { id: a ? a.id : "nouveau", v: a ? { ...a } : { jour: isoJour(), categorie: "ACHAT", fournisseur: "", description: "", ttc: 0, tauxTva: 2000, recuperable: true, km: 0, prixKmMil: 0, missionId: null },
       nouveaux: [], supprimes: [], suggestion: null, lecture: false, modeKm: a ? a.km > 0 : false });
   const v = etat.v;
   const lireForm = () => {
     const f = $("#form"); if (!f) return;
     v.jour = f.jour.value || v.jour; v.fournisseur = f.fournisseur.value; v.description = f.description.value;
     v.missionId = f.mission.value || null;
-    if (etat.modeKm) { v.km = parseInt(f.km.value, 10) || 0; v.prixKmMil = Math.round((parseFloat(String(f.prixkm.value).replace(",", ".")) || 0) * 1000);
-      v.peage = versCentiemes(f.peage.value) || 0; v.peageRecup = f.peagerecup.checked; }
-    else { v.ttc = versCentiemes(f.ttc.value) || 0; v.recuperable = f.recup.checked; }
+    if (f.declaree) { v.declaree = f.declaree.checked; v.jourDeclarationTva = f.jourdecl.value || v.jourDeclarationTva; }
+    if (etat.modeKm) {
+      v.km = parseInt(f.km.value, 10) || 0; v.prixKmMil = Math.round((parseFloat(String(f.prixkm.value).replace(",", ".")) || 0) * 1000);
+      v.peages = versCentiemes(f.peages.value) || 0;
+    }
+    if (f.recup) v.recuperable = f.recup.checked;
+    else { v.ttc = versCentiemes(f.ttc.value) || 0; }
   };
   const enregistrer = async () => {
     lireForm();
@@ -1615,14 +1621,17 @@ function ecranAchat(a) {
     if (etat.modeKm ? !(v.km > 0 && v.prixKmMil > 0) : !(v.ttc > 0)) { toast("Indiquez le montant"); return; }
     const o = a || { id: uid() };
     Object.assign(o, { jour: v.jour, categorie: v.categorie, fournisseur: v.fournisseur.trim(), description: v.description.trim(), missionId: v.missionId,
-      km: etat.modeKm ? v.km : 0, prixKmMil: etat.modeKm ? v.prixKmMil : 0, peage: etat.modeKm ? v.peage || 0 : 0, peageRecup: etat.modeKm && v.peage > 0 && v.peageRecup !== false, ttc: etat.modeKm ? 0 : v.ttc, tauxTva: etat.modeKm ? 0 : v.tauxTva, recuperable: !etat.modeKm && v.recuperable });
+      km: etat.modeKm ? v.km : 0, prixKmMil: etat.modeKm ? v.prixKmMil : 0, ttc: etat.modeKm ? 0 : v.ttc, tauxTva: etat.modeKm ? 0 : v.tauxTva,
+      peages: etat.modeKm ? (v.peages || 0) : 0, recuperable: etat.modeKm ? !!v.recuperable && (v.peages || 0) > 0 : v.recuperable });
+    if (montantsAchat(o).recup > 0 && v.declaree) o.jourDeclarationTva = v.jourDeclarationTva || isoJour(); else delete o.jourDeclarationTva;
     if (!a) D.achats.push(o);
     for (const j of etat.nouveaux) { await Fichiers.mettre(j.fichier, j.blob); D.justificatifs.push({ id: j.id, achatId: o.id, nom: j.nom, mime: j.mime, fichier: j.fichier }); }
     for (const j of etat.supprimes) { D.justificatifs = D.justificatifs.filter(x => x.id !== j.id); await Fichiers.supprimer(j.fichier); }
     sauver(); ecranAchat.etat = null; toast("Achat enregistré"); retour();
   };
   barre(a ? "Achat" : "Nouvel achat", { action: { libelle: "Enregistrer", faire: enregistrer } });
-  const m = montantsAchat(etat.modeKm ? { ...v, km: v.km || 0.0001 } : { ...v, km: 0 });
+  if (v.declaree === undefined) v.declaree = !!v.jourDeclarationTva;
+  const m = montantsAchat(etat.modeKm ? { ...v, ttc: 0, km: v.km || 0.0001 } : { ...v, km: 0, peages: 0 });
   const deplacement = v.categorie === "DEPLACEMENT";
   const existants = a ? D.justificatifs.filter(j => j.achatId === a.id && !etat.supprimes.some(s => s.id === j.id)) : [];
   const pieces = [...existants.map(j => ({ ...j, enregistre: true })), ...etat.nouveaux];
@@ -1644,13 +1653,16 @@ function ecranAchat(a) {
     ${deplacement ? `<label class="interrupteur"><span>Indemnités kilométriques (véhicule personnel)</span><input type="checkbox" id="modekm" ${etat.modeKm ? "checked" : ""}></label>` : ""}
     ${etat.modeKm ? `<div class="deux"><label class="champ"><span>Kilomètres</span><input name="km" inputmode="numeric" value="${v.km || ""}"></label>
         <label class="champ"><span>Barème (€ / km, ex. 0,636)</span><input name="prixkm" inputmode="decimal" value="${v.prixKmMil ? String(v.prixKmMil / 1000).replace(".", ",") : ""}"></label></div>
-        <label class="champ"><span>Péages du trajet, TTC (€)</span><input name="peage" inputmode="decimal" value="${v.peage ? depuisCentiemes(v.peage) : ""}"></label>
-        ${v.peage ? `<label class="interrupteur"><span>TVA des péages récupérable (20 %)</span><input type="checkbox" name="peagerecup" ${v.peageRecup !== false ? "checked" : ""}></label>` : `<input type="checkbox" name="peagerecup" hidden ${v.peageRecup !== false ? "checked" : ""}>`}
-        <p class="note ok">${m.peage ? `Indemnités ${euros(m.ik)} (sans TVA) + péages ${euros(m.peage)} (TVA ${euros(m.tva)}${v.peageRecup !== false ? " récupérable" : " non récupérable"}) = ${euros(m.ttc)}` : `Montant : ${euros(m.ttc)}, sans TVA (non récupérable)`}</p>`
+        <label class="champ"><span>Péages (€ TTC, facultatif)</span><input name="peages" inputmode="decimal" value="${v.peages ? depuisCentiemes(v.peages) : ""}"></label>
+        <label class="interrupteur" id="bloc-recup-peages" ${v.peages > 0 ? "" : "hidden"}><span>TVA des péages récupérable</span><input type="checkbox" name="recup" ${v.recuperable ? "checked" : ""}></label>
+        <p class="note ok" id="resume-montant">${texteMontantAchat(m, v, true)}</p>`
       : `<label class="champ"><span>Montant TTC (€)</span><input name="ttc" inputmode="decimal" value="${v.ttc ? depuisCentiemes(v.ttc) : ""}"></label>
         <div class="puces">${TAUX_TVA.map(t => `<button type="button" class="puce" data-taux="${t}" aria-pressed="${v.tauxTva === t}">${depuisCentiemes(t)} %</button>`).join("")}</div>
         <label class="interrupteur"><span>TVA récupérable</span><input type="checkbox" name="recup" ${v.recuperable ? "checked" : ""}></label>
-        <p class="note ok">HT ${euros(m.ht)}, TVA ${euros(m.tva)}${m.tva ? (v.recuperable ? " (récupérable)" : " (non récupérable)") : ""}</p>`}
+        <p class="note ok" id="resume-montant">${texteMontantAchat(m, v, false)}</p>`}
+    <div id="bloc-declaration" ${m.recup > 0 ? "" : "hidden"}><div class="section">Déclaration de TVA</div>
+      <label class="interrupteur"><span id="decl-libelle">TVA déductible de ${euros(m.recup)} déclarée</span><input type="checkbox" name="declaree" ${v.declaree ? "checked" : ""}></label>
+      <label class="champ" id="bloc-jourdecl" ${v.declaree ? "" : "hidden"}><span>Date de déclaration</span><input type="date" name="jourdecl" value="${v.jourDeclarationTva || isoJour()}"></label></div>
     <div class="section">Mission (facultatif)</div>
     <label class="champ"><span>Mission</span><select name="mission"><option value="">Aucune</option>${D.missions.filter(x => !x.terminee || x.id === v.missionId).map(x => `<option value="${x.id}" ${x.id === v.missionId ? "selected" : ""}>${echap(nomMission(x))}</option>`).join("")}</select></label>
     <div class="section">Justificatifs</div>
@@ -1666,10 +1678,19 @@ function ecranAchat(a) {
   const re = () => { lireForm(); rendre(); };
   $$("[data-cat]").forEach(b => b.onclick = () => { lireForm(); v.categorie = b.dataset.cat; if (v.categorie !== "DEPLACEMENT") etat.modeKm = false; rendre(); });
   $$("[data-taux]").forEach(b => b.onclick = () => { lireForm(); v.tauxTva = +b.dataset.taux; if (!v.tauxTva) v.recuperable = false; rendre(); });
-  const mk = $("#modekm"); if (mk) mk.onchange = () => { lireForm(); etat.modeKm = mk.checked; rendre(); };
-  ["ttc", "km", "prixkm", "peage"].forEach(n => f[n] && f[n].addEventListener("change", re));
-  if (f.recup) f.recup.onchange = re;
-  if (f.peagerecup) f.peagerecup.onchange = re;
+  const mk = $("#modekm"); if (mk) mk.onchange = () => { lireForm(); etat.modeKm = mk.checked; if (mk.checked) v.recuperable = false; rendre(); };   // péages d'un véhicule personnel : TVA en général non récupérable
+  // Mise à jour en direct du résumé, sans réafficher le formulaire (le clavier reste ouvert)
+  const majMontant = () => {
+    lireForm();
+    const mm = montantsAchat(etat.modeKm ? { ...v, ttc: 0, km: v.km || 0.0001 } : { ...v, km: 0, peages: 0 });
+    $("#resume-montant").textContent = texteMontantAchat(mm, v, etat.modeKm);
+    const bp = $("#bloc-recup-peages"); if (bp) bp.hidden = !(v.peages > 0);
+    $("#bloc-declaration").hidden = !(mm.recup > 0); $("#decl-libelle").textContent = `TVA déductible de ${euros(mm.recup)} déclarée`;
+    $("#bloc-jourdecl").hidden = !v.declaree;
+  };
+  ["ttc", "km", "prixkm", "peages"].forEach(n => f[n] && f[n].addEventListener("input", majMontant));
+  [f.recup, f.declaree].forEach(x => x && x.addEventListener("change", majMontant));
+
   // Fournisseur connu : reprendre les habitudes du dernier achat chez lui (nouvel achat uniquement)
   f.fournisseur.addEventListener("change", () => {
     if (a) return;
@@ -1703,9 +1724,8 @@ function ecranAchat(a) {
   const ap = $("#appliquer"); if (ap) ap.onclick = () => {
     lireForm();
     if (s.fournisseur) v.fournisseur = s.fournisseur; if (s.date) v.jour = isoJour(s.date);
-    if (s.deplacement) v.categorie = "DEPLACEMENT";
-    if (s.ttc != null) { if (etat.modeKm) v.peage = s.ttc; else v.ttc = s.ttc; }
-    if (s.taux != null && TAUX_TVA.includes(s.taux) && !etat.modeKm) v.tauxTva = s.taux; etat.suggestion = null; rendre();
+    if (s.deplacement) v.categorie = "DEPLACEMENT"; if (s.ttc != null) { etat.modeKm = false; v.ttc = s.ttc; }
+    if (s.taux != null && TAUX_TVA.includes(s.taux)) v.tauxTva = s.taux; etat.suggestion = null; rendre();
   };
   const ig = $("#ignorer"); if (ig) ig.onclick = () => { lireForm(); etat.suggestion = null; rendre(); };
   $("#enreg").onclick = enregistrer;
@@ -1719,7 +1739,7 @@ function ecranAchat(a) {
 /* ===== app-bilan.js ===== */
 /* Chronéo web – tableau de bord (CA réel / prévisionnel, TVA) – mêmes règles que l'appli Android */
 
-const BILAN = { annee: new Date().getFullYear(), moisCa: new Date().getMonth(), moisCumul: new Date().getMonth(), moisTva: new Date().getMonth(), moisTvaCumul: new Date().getMonth() };
+const BILAN = { tvaCumule: true, annee: new Date().getFullYear(), moisCa: new Date().getMonth(), moisCumul: new Date().getMonth(), moisTva: new Date().getMonth(), moisTvaCumul: new Date().getMonth() };
 
 function rendreBilan() {
   barre("Tableau de bord", { principal: true });
@@ -1760,6 +1780,26 @@ function rendreBilan() {
   const exigibles = emises.filter(f => mois(debits ? f.jourEmission : f.statut === "PAYEE" ? f.jourPaiement : null) !== null);
   const declaree = exigibles.filter(f => f.jourDeclarationTva).reduce((t, f) => t + f.ttc - f.ht, 0), aDeclarer = exigibles.filter(f => !f.jourDeclarationTva).reduce((t, f) => t + f.ttc - f.ht, 0);
 
+  // TVA collectée (ventes) et déductible (achats), à la date de l'opération et à la date de déclaration
+  const collVente = Array(12).fill(0), dedAchat = Array(12).fill(0), collDecl = Array(12).fill(0), dedDecl = Array(12).fill(0);
+  let collNonDecl = 0, dedNonDecl = 0;
+  emises.forEach(f => {
+    const t = f.ttc - f.ht, mv = mois(f.jourEmission), md = mois(f.jourDeclarationTva);
+    if (mv !== null) { collVente[mv] += t; if (!f.jourDeclarationTva) collNonDecl += t; }
+    if (md !== null) collDecl[md] += t;
+  });
+  D.saisies.forEach(s => { if (statutDe(s) !== "ancien") return; const m = mois(s.jour); if (m !== null) { const t = tvaSur(valeur(s)); collVente[m] += t; collDecl[m] += t; } });
+  D.achats.forEach(a => {
+    const r = montantsAchat(a).recup; if (!r) return;
+    const ma = mois(a.jour), md = mois(a.jourDeclarationTva);
+    if (ma !== null) { dedAchat[ma] += r; if (!a.jourDeclarationTva) dedNonDecl += r; }
+    if (md !== null) dedDecl[md] += r;
+  });
+  const serieTva = v => (BILAN.tvaCumule ? cumul(v) : v).map((x, i) => i <= dernier ? x : null);
+  const detailTva = (c, d, m) => {
+    const net = c[m] - d[m], cc = c.slice(0, m + 1).reduce((x, y) => x + y, 0), cd = d.slice(0, m + 1).reduce((x, y) => x + y, 0);
+    return `<p class="note">${majuscule(MOIS[m])} : collectée ${euros(c[m])} − déductible ${euros(d[m])} = ${net >= 0 ? euros(net) + " à payer" : "crédit " + euros(-net)}<br>Cumul à fin ${MOIS[m]} : ${euros(cc)} − ${euros(cd)} = ${cc - cd >= 0 ? euros(cc - cd) : "crédit " + euros(cd - cc)}</p>`;
+  };
   const OR = "#FF8000", ORC = "rgba(255,128,0,.45)", NEUTRE = "var(--texte-2)";
   const nomMois = i => majuscule(MOIS[i]);
   const cumReal = cumul(realise), courbeAn = cumReal.map((x, i) => i <= dernier ? x : null);
@@ -1795,24 +1835,26 @@ function rendreBilan() {
     <div class="section">TVA</div>
     <div class="carte">
       ${franchise ? `<p>Franchise en base : TVA non applicable sur vos factures et non récupérable sur vos achats.</p>` : `
-      <div class="chiffres2"><div><div class="petit">TVA due</div><div class="v">${euros(somme(tvaDue))}</div></div><div><div class="petit">À recevoir (clients)</div><div class="v" style="color:#c46a00">${euros(somme(tvaRec))}</div></div><div><div class="petit">Récupérable</div><div class="v accent-t">${euros(somme(tvaDed))}</div></div></div>
-      <p class="fort" style="margin:8px 0 2px">${somme(tvaDue) - somme(tvaDed) >= 0 ? `Solde ${an} : ${euros(somme(tvaDue) - somme(tvaDed))} à reverser` : `Solde ${an} : crédit de TVA de ${euros(somme(tvaDed) - somme(tvaDue))}`}</p>
-      ${declaree + aDeclarer > 0 ? `<p class="note ${aDeclarer ? "ko" : ""}">Factures Chronéo : TVA déclarée ${euros(declaree)}, reste à déclarer ${euros(aDeclarer)}</p>` : ""}
-      ${somme(tvaRec) ? `<p class="note">Les ${euros(somme(tvaRec))} « à recevoir » deviendront dus à l’encaissement (factures en attente et temps à facturer).</p>` : ""}
-      ${grapheBarres("tva", [{ couleur: NEUTRE, valeurs: tvaDue }, { couleur: ORC, valeurs: tvaRec }, { couleur: OR, valeurs: tvaDed }], BILAN.moisTva, false)}
-      ${legende([[NEUTRE, "Due"], [ORC, "À recevoir"], [OR, "Récupérable"]])}
-      <p class="note">${nomMois(BILAN.moisTva)} : due ${euros(tvaDue[BILAN.moisTva])} − récupérable ${euros(tvaDed[BILAN.moisTva])} = ${tvaDue[BILAN.moisTva] - tvaDed[BILAN.moisTva] >= 0 ? euros(tvaDue[BILAN.moisTva] - tvaDed[BILAN.moisTva]) + " à payer" : "crédit " + euros(tvaDed[BILAN.moisTva] - tvaDue[BILAN.moisTva])}${tvaRec[BILAN.moisTva] ? ", à recevoir " + euros(tvaRec[BILAN.moisTva]) : ""}</p>
-      <div class="fort" style="margin-top:14px">Cumul ${an}</div>
-      ${grapheCourbes("tvacumul", [{ couleur: NEUTRE, valeurs: cDue }, { couleur: OR, valeurs: cDed }, { couleur: OR, valeurs: cRec, pointillee: true }], BILAN.moisTvaCumul)}
-      ${legende([[NEUTRE, "Due"], [OR, "Récupérable"], [ORC, "À recevoir (pointillés)"]])}
-      <p class="note">${cDue[BILAN.moisTvaCumul] !== null ? `Fin ${MOIS[BILAN.moisTvaCumul]} : due ${euros(cDue[BILAN.moisTvaCumul])}, récupérable ${euros(cDed[BILAN.moisTvaCumul] || 0)}, à recevoir ${euros(cRec[BILAN.moisTvaCumul] || 0)}` : `Fin ${MOIS[BILAN.moisTvaCumul]} : à venir`}</p>
-      <p class="note">${debits ? "TVA due à l’émission des factures (option débits)." : "TVA due à l’encaissement (factures marquées payées)."} Temps facturés dans l’ancien outil : TVA estimée à ${depuisCentiemes(tauxTva)} % sur la valeur au TJM, au mois du temps.</p>`}
+      <div class="chiffres2"><div><div class="petit">TVA collectée</div><div class="v">${euros(somme(collVente))}</div></div><div><div class="petit">TVA déductible</div><div class="v accent-t">${euros(somme(dedAchat))}</div></div></div>
+      <p class="fort" style="margin:8px 0 2px">${somme(collVente) - somme(dedAchat) >= 0 ? `Solde ${an} : ${euros(somme(collVente) - somme(dedAchat))} à reverser` : `Solde ${an} : crédit de TVA de ${euros(somme(dedAchat) - somme(collVente))}`}</p>
+      ${collNonDecl + dedNonDecl > 0 ? `<p class="note ko">Pas encore déclaré : collectée ${euros(collNonDecl)}, déductible ${euros(dedNonDecl)} (solde ${euros(collNonDecl - dedNonDecl)})</p>` : ""}
+      <div class="puces"><button class="puce" data-tvamode="mois" aria-pressed="${!BILAN.tvaCumule}">Par mois</button><button class="puce" data-tvamode="cumul" aria-pressed="${BILAN.tvaCumule}">Cumulé</button></div>
+      <div class="fort" style="margin-top:6px">1. À la date de vente et d’achat</div>
+      ${grapheCourbes("tva1", [{ couleur: NEUTRE, valeurs: serieTva(collVente) }, { couleur: OR, valeurs: serieTva(dedAchat) }], BILAN.moisTva)}
+      ${legende([[NEUTRE, "Collectée (ventes)"], [OR, "Déductible (achats)"]])}
+      ${detailTva(collVente, dedAchat, BILAN.moisTva)}
+      <div class="fort" style="margin-top:16px">2. À la date de déclaration</div>
+      ${grapheCourbes("tva2", [{ couleur: NEUTRE, valeurs: serieTva(collDecl) }, { couleur: OR, valeurs: serieTva(dedDecl) }], BILAN.moisTvaCumul)}
+      ${legende([[NEUTRE, "Collectée déclarée"], [OR, "Déductible déclarée"]])}
+      ${detailTva(collDecl, dedDecl, BILAN.moisTvaCumul)}
+      <p class="note">Dates de déclaration saisies sur chaque facture et chaque achat. Temps facturés dans l’ancien outil : TVA estimée à ${depuisCentiemes(tauxTva)} % sur la valeur au TJM, considérée vendue et déclarée au mois du temps.</p>`}
     </div>
     <p class="note" style="margin:16px 0">Indicatif : à rapprocher de votre comptabilité et de vos déclarations.</p>`);
 
   $$("[data-an]").forEach(b => b.onclick = () => { BILAN.annee += +b.dataset.an; rendre(); });
+  $$("[data-tvamode]").forEach(b => b.onclick = () => { BILAN.tvaCumule = b.dataset.tvamode === "cumul"; rendre(); });
   $$("[data-mois]").forEach(r => r.onclick = () => {
-    const cle = { ca: "moisCa", cumul: "moisCumul", tva: "moisTva", tvacumul: "moisTvaCumul" }[r.dataset.graphe];
+    const cle = { ca: "moisCa", cumul: "moisCumul", tva1: "moisTva", tva2: "moisTvaCumul" }[r.dataset.graphe];
     BILAN[cle] = +r.dataset.mois; rendre();
   });
 }
@@ -2005,7 +2047,7 @@ async function sauvegardeAndroid() {
     factures: D.factures.filter(f => nC.has(f.clientId)).map(f => ({ id: nF.get(f.id), clientId: nC.get(f.clientId), numero: f.numero || null, statut: f.statut, jourCreation: ep(f.jourCreation), jourEmission: ep(f.jourEmission),
       jourEcheance: ep(f.jourEcheance), jourPaiement: ep(f.jourPaiement), totalHtCents: f.ht, totalTtcCents: f.ttc, avecAnnexe: !!f.avecAnnexe, jourDeclarationTva: ep(f.jourDeclarationTva) })),
     lignes: D.lignes.filter(l => nF.has(l.factureId)).map((l, i) => ({ id: i + 1, factureId: nF.get(l.factureId), ordre: l.ordre, libelle: l.libelle, quantiteCentiemes: l.qteCent, unite: l.unite, prixCents: l.prixCents, tauxTvaCentiemes: l.tvaCent, saisieId: null, missionId: nM.get(l.missionId) ?? null })),
-    achats: D.achats.map(a => ({ id: nA.get(a.id), jour: a.jour, categorie: a.categorie, fournisseur: a.fournisseur || "", description: a.description || "", montantTtcCents: a.ttc || 0, tauxTvaCentiemes: a.tauxTva || 0, tvaRecuperable: !!a.recuperable, kilometres: a.km || 0, prixKmMilliemes: a.prixKmMil || 0, peageTtcCents: a.peage || 0, peageTvaRecuperable: !!a.peageRecup, missionId: nM.get(a.missionId) ?? null })),
+    achats: D.achats.map(a => ({ id: nA.get(a.id), jour: a.jour, categorie: a.categorie, fournisseur: a.fournisseur || "", description: a.description || "", montantTtcCents: a.ttc || 0, tauxTvaCentiemes: a.tauxTva || 0, tvaRecuperable: !!a.recuperable, kilometres: a.km || 0, prixKmMilliemes: a.prixKmMil || 0, missionId: nM.get(a.missionId) ?? null, peagesCents: a.peages || 0, jourDeclarationTva: ep(a.jourDeclarationTva) })),
     justificatifs: [], pdfs: {}, logoMode: D.reglages.logo === "perso" ? "perso" : D.reglages.logo,
   };
   let k = 1;
@@ -2035,7 +2077,7 @@ async function restaurerAndroid(j) {
     jourEcheance: iso(f.jourEcheance), jourPaiement: iso(f.jourPaiement), jourDeclarationTva: iso(f.jourDeclarationTva), ht: f.totalHtCents || 0, ttc: f.totalTtcCents || 0, avecAnnexe: f.avecAnnexe !== false,
     pdf: j.pdfs && j.pdfs[String(f.id)] ? "pdf-" + id("f", f.id) : undefined }));
   nouv.lignes = (j.lignes || []).map(l => ({ id: id("l", l.id), factureId: id("f", l.factureId), ordre: l.ordre || 0, libelle: l.libelle, qteCent: l.quantiteCentiemes, unite: l.unite, prixCents: l.prixCents, tvaCent: l.tauxTvaCentiemes, missionId: id("m", l.missionId) }));
-  nouv.achats = (j.achats || []).map(a => ({ id: id("a", a.id), jour: iso(a.jour), categorie: a.categorie || "ACHAT", fournisseur: a.fournisseur || "", description: a.description || "", ttc: a.montantTtcCents || 0, tauxTva: a.tauxTvaCentiemes || 0, recuperable: !!a.tvaRecuperable, km: a.kilometres || 0, prixKmMil: a.prixKmMilliemes || 0, peage: a.peageTtcCents || 0, peageRecup: !!a.peageTvaRecuperable, missionId: id("m", a.missionId) }));
+  nouv.achats = (j.achats || []).map(a => ({ id: id("a", a.id), jour: iso(a.jour), categorie: a.categorie || "ACHAT", fournisseur: a.fournisseur || "", description: a.description || "", ttc: a.montantTtcCents || 0, tauxTva: a.tauxTvaCentiemes || 0, recuperable: !!a.tvaRecuperable, km: a.kilometres || 0, prixKmMil: a.prixKmMilliemes || 0, missionId: id("m", a.missionId), peages: a.peagesCents || 0, jourDeclarationTva: iso(a.jourDeclarationTva) || undefined }));
   // Fichiers
   await Fichiers.vider();
   for (const f of j.factures || []) { const b64 = j.pdfs && j.pdfs[String(f.id)]; if (b64) await Fichiers.mettre("pdf-" + id("f", f.id), b64VersBlob(b64, "application/pdf")); }
